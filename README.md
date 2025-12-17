@@ -1,5 +1,7 @@
 # KVC File Recovery Tool
 
+![KVC File Recovery Tool](images/frt.gif)
+
 **Professional-grade file recovery for Windows • Ultra-lightweight • Zero dependencies**
 
 A high-performance forensic tool that recovers deleted files from NTFS, FAT32, and exFAT filesystems by reading raw disk sectors directly.
