@@ -539,7 +539,6 @@ void RecoveryApplication::OnMenuCommand(WORD menuId) {
         break;
     }
 }
-
 // Initiate a new scan operation.
 void RecoveryApplication::OnStartScan() {
     if (m_isScanning) return;                    // Prevent concurrent scans
@@ -565,7 +564,6 @@ void RecoveryApplication::OnStartScan() {
     bool enableMft = (SendMessage(m_hwndCheckMft, BM_GETCHECK, 0, 0) == BST_CHECKED);
     bool enableUsn = (SendMessage(m_hwndCheckUsn, BM_GETCHECK, 0, 0) == BST_CHECKED);
     bool enableCarving = (SendMessage(m_hwndCheckCarving, BM_GETCHECK, 0, 0) == BST_CHECKED);
-
     if (!enableMft && !enableUsn && !enableCarving) {
         MessageBoxW(m_hwnd, L"Please select at least one scan mode", L"No Scan Mode Selected", MB_OK | MB_ICONWARNING);
         return;
@@ -599,15 +597,15 @@ void RecoveryApplication::OnStopScan() {
 }
 
 // Perform scan in a worker thread.
-void RecoveryApplication::StartBackgroundScan(wchar_t driveLetter, std::wstring folderFilter, 
-                                              std::wstring filenameFilter, bool enableMft, 
-                                              bool enableUsn, bool enableCarving) {
-	auto onProgress = [this](const std::wstring& status, float progress) {
+void RecoveryApplication::StartBackgroundScan(wchar_t driveLetter, std::wstring folderFilter,
+                                               std::wstring filenameFilter, bool enableMft,
+                                               bool enableUsn, bool enableCarving) {
+    auto onProgress = [this](const std::wstring& status, float progress) {
         std::wstring finalStatus = status + L"          |          💡 TIP: Use Shift/Ctrl+Arrows to select, Ctrl+A for All";
         SendMessage(m_hwndStatusBar, SB_SETTEXT, 0, (LPARAM)finalStatus.c_str()); // Update status text
         PostMessage(m_hwnd, WM_SCAN_PROGRESS, static_cast<WPARAM>(progress * 100), 0); // Update progress bar
     };
-
+    
     auto onFile = [this](const DeletedFileEntry& file) {
         {
             std::lock_guard<std::mutex> lock(m_filesMutex); // Protect shared results
@@ -641,7 +639,6 @@ void RecoveryApplication::PopulateResultsList() {
 // Check if a file matches the selected type filter.
 bool RecoveryApplication::IsFileOfType(const std::wstring& name, int typeIndex) {
     if (typeIndex <= 0) return true;             // All Files selected
-
     size_t dotPos = name.rfind(L'.');            // Locate file extension
     if (dotPos == std::wstring::npos) return false;
 
@@ -668,7 +665,6 @@ bool RecoveryApplication::IsFileOfType(const std::wstring& name, int typeIndex) 
 // Apply text and type filters to scan results.
 void RecoveryApplication::FilterResults() {
     int typeIndex = static_cast<int>(SendMessage(GetDlgItem(m_hwnd, TYPE_COMBO_ID), CB_GETCURSEL, 0, 0));
-    
     wchar_t buffer[MAX_PATH];
     GetWindowTextW(GetDlgItem(m_hwnd, FILTER_EDIT_ID), buffer, MAX_PATH);
     std::wstring searchName = buffer;
@@ -697,14 +693,14 @@ void RecoveryApplication::FilterResults() {
 
     // Update virtual ListView item count.
     ListView_SetItemCountEx(m_hwndListView, m_filteredFiles.size(), LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
-    
+
     if (!m_filteredFiles.empty()) {
         ListView_RedrawItems(m_hwndListView, 0, static_cast<int>(m_filteredFiles.size()) - 1);
     }
     UpdateWindow(m_hwndListView);
-    
+
     wchar_t status[256];
-	swprintf_s(status, L"Showing %zu of %zu files          |          💡 TIP: Use Shift/Ctrl+Arrows to select, Ctrl+A for All", 
+    swprintf_s(status, L"Showing %zu of %zu files          |          💡 TIP: Use Shift/Ctrl+Arrows to select, Ctrl+A for All", 
                m_filteredFiles.size(), m_deletedFiles.size());
     UpdateStatusBar(status);
 }
@@ -713,7 +709,6 @@ void RecoveryApplication::FilterResults() {
 void RecoveryApplication::OnRecoverSelected() {
     std::vector<DeletedFileEntry> selectedFiles;
     int itemCount = ListView_GetItemCount(m_hwndListView);
-    
     for (int i = 0; i < itemCount; ++i) {
         if (ListView_GetCheckState(m_hwndListView, i)) {
             std::lock_guard<std::mutex> lock(m_filesMutex);
@@ -733,68 +728,97 @@ void RecoveryApplication::OnRecoverSelected() {
 
 // Recover multiple files to a user-selected destination.
 void RecoveryApplication::RecoverMultipleFiles(const std::vector<DeletedFileEntry>& files) {
-    BROWSEINFO bi = {};
-    bi.hwndOwner = m_hwnd;
-    bi.lpszTitle = L"Select destination folder for recovered files";
-    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    std::wstring destFolder;
+    bool folderSelected = false;
 
-    LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
-    if (pidl) {
-        wchar_t path[MAX_PATH];
-        if (SHGetPathFromIDList(pidl, path)) {
-            std::wstring destFolder = path;
+    // Check if running in WinRE environment and use appropriate file picker.
+    if (IsWinRE()) {
+        OPENFILENAMEW ofn = { 0 };
+        wchar_t path[MAX_PATH] = { 0 };
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = m_hwnd;
+        ofn.lpstrFile = path;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrTitle = L"[WinRE Mode] Select any file inside destination folder";
+        ofn.Flags = OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_DONTADDTORECENT;
 
-            if (!m_recoveryEngine->ValidateDestination(m_lastScannedDrive, destFolder)) {
-                CoTaskMemFree(pidl);
-                MessageBoxW(m_hwnd, 
-                    L"Cannot recover to the source drive!\n\n"
-                    L"Please select a folder on a different drive (e.g., USB drive, D:\\, E:\\).\n\n"
-                    L"Recovering to the same drive may overwrite deleted data.",
-                    L"Invalid Destination", 
-                    MB_OK | MB_ICONERROR);
-                return;
-            }
-
-            // Disable UI during recovery.
-            EnableWindow(m_hwndScanButton, FALSE);
-            EnableWindow(m_hwndStopButton, FALSE);
-            EnableWindow(m_hwndListView, FALSE);
-            EnableWindow(m_hwndDriveCombo, FALSE);
-
-            UpdateStatusBar(L"Recovering files... Please wait.");
-
-            std::thread recoveryThread([this, files, destFolder]() {
-                PostMessage(m_hwnd, WM_SCAN_PROGRESS, 0, 0);
-
-                bool success = m_recoveryEngine->RecoverMultipleFiles(
-                    files,
-                    m_lastScannedDrive,
-                    destFolder,
-                    [this](const std::wstring& msg, float progress) {
-                        SendMessage(m_hwndStatusBar, SB_SETTEXT, 0, (LPARAM)msg.c_str());
-
-                        if (progress >= 0.0f) {
-                            PostMessage(m_hwnd, WM_SCAN_PROGRESS, static_cast<WPARAM>(progress * 100), 0);
-                        }
-                    }
-                );
-
-                PostMessage(m_hwnd, WM_RECOVERY_COMPLETE, success ? 1 : 0, 0);
-
-                if (success) {
-                    wchar_t msg[256];
-                    swprintf_s(msg, 256, L"Recovery finished! Check folder:\n%s", destFolder.c_str());
-                    MessageBoxW(NULL, msg, L"Recovery Complete", MB_OK | MB_ICONINFORMATION);
-                } else {
-                    MessageBoxW(NULL, 
-                        L"Recovery failed!\n\nCheck status bar for details.", 
-                        L"Recovery Error", 
-                        MB_OK | MB_ICONERROR);
+        if (GetOpenFileNameW(&ofn)) {
+            destFolder = path;
+            size_t lastSlash = destFolder.find_last_of(L"\\");
+            if (lastSlash != std::wstring::npos) {
+                destFolder = destFolder.substr(0, lastSlash);
+                if (destFolder.empty() || destFolder.back() != L'\\') {
+                    destFolder += L'\\';        // Ensure trailing slash
                 }
-            });
-            recoveryThread.detach();             // Run recovery asynchronously
+                folderSelected = true;
+            }
         }
-        CoTaskMemFree(pidl);
+    } else {
+        BROWSEINFO bi = { 0 };
+        bi.hwndOwner = m_hwnd;
+        bi.lpszTitle = L"Select destination folder for recovered files";
+        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+
+        LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
+        if (pidl) {
+            wchar_t path[MAX_PATH];
+            if (SHGetPathFromIDList(pidl, path)) {
+                destFolder = path;
+                folderSelected = true;
+            }
+            CoTaskMemFree(pidl);
+        }
+    }
+
+    if (folderSelected) {
+        if (!m_recoveryEngine->ValidateDestination(m_lastScannedDrive, destFolder)) {
+            MessageBoxW(m_hwnd, 
+                L"Cannot recover to the source drive!\n\n"
+                L"Please select a folder on a different drive (e.g., USB drive, D:\\, E:\\).\n\n"
+                L"Recovering to the same drive may overwrite deleted data.",
+                L"Invalid Destination", 
+                MB_OK | MB_ICONERROR);
+            return;
+        }
+
+        // Disable UI during recovery.
+        EnableWindow(m_hwndScanButton, FALSE);
+        EnableWindow(m_hwndStopButton, FALSE);
+        EnableWindow(m_hwndListView, FALSE);
+        EnableWindow(m_hwndDriveCombo, FALSE);
+
+        UpdateStatusBar(L"Recovering files... Please wait.");
+
+        std::thread recoveryThread([this, files, destFolder]() {
+            PostMessage(m_hwnd, WM_SCAN_PROGRESS, 0, 0);
+
+            bool success = m_recoveryEngine->RecoverMultipleFiles(
+                files,
+                m_lastScannedDrive,
+                destFolder,
+                [this](const std::wstring& msg, float progress) {
+                    SendMessage(m_hwndStatusBar, SB_SETTEXT, 0, (LPARAM)msg.c_str());
+
+                    if (progress >= 0.0f) {
+                        PostMessage(m_hwnd, WM_SCAN_PROGRESS, static_cast<WPARAM>(progress * 100), 0);
+                    }
+                }
+            );
+
+            PostMessage(m_hwnd, WM_RECOVERY_COMPLETE, success ? 1 : 0, 0);
+
+            if (success) {
+                wchar_t msg[256];
+                swprintf_s(msg, 256, L"Recovery finished! Check folder:\n%s", destFolder.c_str());
+                MessageBoxW(NULL, msg, L"Recovery Complete", MB_OK | MB_ICONINFORMATION);
+            } else {
+                MessageBoxW(NULL, 
+                    L"Recovery failed!\n\nCheck status bar for details.", 
+                    L"Recovery Error", 
+                    MB_OK | MB_ICONERROR);
+            }
+        });
+        recoveryThread.detach();                 // Run recovery asynchronously
     }
 }
 
@@ -1046,19 +1070,49 @@ void RecoveryApplication::RecoverHighlightedFiles() {
 
 // Open folder selection dialog for folder filter input.
 void RecoveryApplication::OnBrowseFolderInput() {
-    BROWSEINFO bi = {};
-    bi.hwndOwner = m_hwnd;
-    bi.lpszTitle = L"Select folder to filter by";
-    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_NONEWFOLDERBUTTON;
+    // Check if running in WinRE environment and use appropriate picker.
+    if (IsWinRE()) {
+        OPENFILENAMEW ofn = { 0 };
+        wchar_t path[MAX_PATH] = { 0 };
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = m_hwnd;
+        ofn.lpstrFilter = L"Folders\0*.none\0All Files\0*.*\0";
+        ofn.lpstrFile = path;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrTitle = L"[WinRE Mode] Select any file in target folder";
+        ofn.Flags = OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_DONTADDTORECENT;
 
-    LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
-    if (pidl) {
-        wchar_t path[MAX_PATH];
-        if (SHGetPathFromIDList(pidl, path)) {
-            SetWindowTextW(m_hwndFolderEdit, path); // Apply selected folder
+        if (GetOpenFileNameW(&ofn)) {
+            std::wstring folderPath = path;
+            size_t lastSlash = folderPath.find_last_of(L"\\");
+            if (lastSlash != std::wstring::npos) {
+                folderPath = folderPath.substr(0, lastSlash);
+            }
+            SetWindowTextW(m_hwndFolderEdit, folderPath.c_str());
         }
-        CoTaskMemFree(pidl);
+    } else {
+        BROWSEINFO bi = { 0 };
+        bi.hwndOwner = m_hwnd;
+        bi.lpszTitle = L"Select folder to filter by";
+        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_NONEWFOLDERBUTTON;
+
+        LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
+        if (pidl) {
+            wchar_t path[MAX_PATH];
+            if (SHGetPathFromIDList(pidl, path)) {
+                SetWindowTextW(m_hwndFolderEdit, path);
+            }
+            CoTaskMemFree(pidl);
+        }
     }
+}
+
+// Detect if running in Windows Recovery Environment.
+bool RecoveryApplication::IsWinRE() {
+    wchar_t winDir[MAX_PATH];
+    GetWindowsDirectoryW(winDir, MAX_PATH);
+    std::wstring checkPath = std::wstring(winDir) + L"\\System32\\winpeshl.exe";
+    return (GetFileAttributesW(checkPath.c_str()) != INVALID_FILE_ATTRIBUTES);
 }
 
 } // namespace KVC

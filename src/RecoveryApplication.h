@@ -3,8 +3,7 @@
 // ============================================================================
 // Manages the Windows GUI interface, user interactions, and coordinates
 // the scanning and recovery operations.
-// Implements multi-threaded scanning
-// with responsive UI and progress reporting.
+// Implements multi-threaded scanning with responsive UI and progress reporting.
 // ============================================================================
 
 #pragma once
@@ -68,6 +67,7 @@ private:
     std::wstring FormatFileSize(uint64_t bytes);
     void UpdateStatusBar(const std::wstring& text);
     void ShowError(const std::wstring& message);
+    bool IsWinRE();
 
     HINSTANCE m_hInstance;
     HWND m_hwnd;
@@ -104,8 +104,7 @@ private:
     wchar_t m_lastScannedDrive; // Remember which drive was scanned
 
     // Sorting state
-    int m_sortColumn = -1;
-    // -1 means no sorting
+    int m_sortColumn = -1;      // -1 means no sorting
     bool m_sortAscending = true;
 
     static constexpr int LISTVIEW_ID = 1001;
@@ -124,7 +123,7 @@ private:
     static constexpr int CHECK_CARVING_ID = 1014;
     static constexpr int BROWSE_FOLDER_BTN_ID = 1015;
     static constexpr int ID_CONTEXT_SAVE_AS = 40020;
-	static constexpr int ID_EDIT_SELECTALL = 40021;
+    static constexpr int ID_EDIT_SELECTALL = 40021;
 
     static constexpr UINT WM_SCAN_PROGRESS = WM_APP + 1;
     static constexpr UINT WM_SCAN_FILE_FOUND = WM_APP + 2;
@@ -132,4 +131,5 @@ private:
     static constexpr UINT WM_RECOVERY_COMPLETE = WM_APP + 4;
     static constexpr UINT WM_SORT_COMPLETE = WM_APP + 5;
 };
+
 } // namespace KVC

@@ -29,13 +29,13 @@ bool NTFSScanner::ApplyFixups(std::vector<uint8_t>& recordData, uint16_t bytesPe
     uint16_t usaOffset = header->updateSequenceOffset;
     uint16_t usaCount = header->updateSequenceSize;
     
-    if (usaOffset + (usaCount * 2) > recordData.size()) return false;
+    if (static_cast<size_t>(usaOffset) + static_cast<size_t>(usaCount) * 2 > recordData.size()) return false;
     
     uint16_t* usaArray = reinterpret_cast<uint16_t*>(recordData.data() + usaOffset);
     uint16_t updateSequenceNumber = usaArray[0];
     
     // Replace sector end markers with actual data from USA
-    for (int i = 1; i < usaCount; ++i) {
+    for (uint16_t i = 1; i < usaCount; ++i) {
         uint32_t sectorEndOffset = (i * bytesPerSector) - 2;
         if (sectorEndOffset + 2 > recordData.size()) break;
         
@@ -76,10 +76,10 @@ std::vector<uint8_t> NTFSScanner::ReadMFTRecord(DiskHandle& disk, const NTFSBoot
     
     if (offsetInSector >= data.size()) return {};
 
-    std::vector<uint8_t> result(
-        data.begin() + offsetInSector, 
-        data.begin() + offsetInSector + mftRecordSize
-    );
+	std::vector<uint8_t> result(
+		data.begin() + static_cast<size_t>(offsetInSector), 
+		data.begin() + static_cast<size_t>(offsetInSector + mftRecordSize)
+	);
     
     // Some disks/pendrives may have fixups already applied or not need them
     ApplyFixups(result, boot.bytesPerSector);
@@ -381,10 +381,10 @@ bool NTFSScanner::ScanVolume(
             size_t offsetInBuffer = static_cast<size_t>(j * mftRecordSize);
             if (offsetInBuffer + mftRecordSize > batchData.size()) break;
 
-            std::vector<uint8_t> recordData(
-                batchData.begin() + offsetInBuffer, 
-                batchData.begin() + offsetInBuffer + mftRecordSize
-            );
+			std::vector<uint8_t> recordData(
+				batchData.begin() + static_cast<size_t>(offsetInBuffer), 
+				batchData.begin() + static_cast<size_t>(offsetInBuffer + mftRecordSize)
+			);
 
             ApplyFixups(recordData, boot.bytesPerSector);
 

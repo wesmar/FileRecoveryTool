@@ -110,7 +110,7 @@ std::vector<uint8_t> UsnJournalScanner::ReadMFTRecord(
     size_t end = std::min(static_cast<size_t>(offsetInSector + mftRecordSize), data.size());
     
     if (offsetInSector < data.size()) {
-        return std::vector<uint8_t>(data.begin() + offsetInSector, data.begin() + end);
+        return std::vector<uint8_t>(data.begin() + static_cast<size_t>(offsetInSector), data.begin() + static_cast<size_t>(end));
     }
     
     return {};
