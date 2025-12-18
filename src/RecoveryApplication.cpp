@@ -94,7 +94,7 @@ void RecoveryApplication::CreateMainWindow() {
     m_hwnd = CreateWindowExW(
         0,
         L"KVCRecoveryWindowClass",
-        L"KVC File Recovery - Professional Data Salvage Tool",
+        L"KVC File Recovery - Professional Data Salvage Tool (CLI: use --help)",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
         1200, 600,
