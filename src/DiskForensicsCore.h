@@ -96,6 +96,7 @@ class ExFATScanner;
 class FAT32Scanner;
 class FileCarver;
 class UsnJournalScanner;
+struct CarvingDiagnostics;
 
 class DiskForensicsCore {
 public:

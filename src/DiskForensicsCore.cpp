@@ -1,4 +1,4 @@
-﻿// DiskForensicsCore.cpp
+// DiskForensicsCore.cpp
 #include "DiskForensicsCore.h"
 #include "NTFSScanner.h"
 #include "ExFATScanner.h"
@@ -705,6 +705,9 @@ bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
         auto signatures = FileSignatures::GetAllSignatures();
         uint64_t filesFound = 0;
         
+        // Accumulate diagnostics across all batches
+        FileCarver::CarvingDiagnostics totalStats;
+        
         // Process disk in large batches using memory-mapped I/O
         // Batch size depends on available memory - 256MB is safe on most systems
         uint64_t clustersProcessed = 0;
@@ -719,8 +722,8 @@ bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
             
             uint64_t clustersInBatch = std::min(Constants::CLUSTERS_PER_BATCH, maxClusters - batchStart);
             
-            // Scan batch using memory-mapped I/O
-            auto carvedFiles = m_fileCarver->ScanRegionMemoryMapped(
+            // Scan batch using memory-mapped I/O with diagnostics
+            auto diagnosticResult = m_fileCarver->ScanRegionWithDiagnostics(
                 disk,
                 batchStart,
                 clustersInBatch,
@@ -731,8 +734,11 @@ bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
                 m_config.fileCarvingMaxFiles - filesFound
             );
             
+            // Accumulate statistics across batches
+            totalStats.Merge(diagnosticResult.stats);
+            
             // Report found files
-            for (const auto& carved : carvedFiles) {
+            for (const auto& carved : diagnosticResult.files) {
                 DeletedFileEntry entry;
                 entry.name = std::to_wstring(filesFound + 1) + L"." + 
                             std::wstring(carved.signature.extension, 
@@ -782,6 +788,28 @@ bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
             onProgress(limitMsg, 1.0f);
             break;
         }
+    }
+    
+    // Report fragmentation diagnostics
+    if (totalStats.totalSignaturesFound > 0) {
+        wchar_t diagMsg[512];
+        float knownSizePct = (100.0f * totalStats.filesWithKnownSize) / totalStats.totalSignaturesFound;
+        float fragmentedPct = totalStats.filesWithKnownSize > 0 
+            ? (100.0f * totalStats.potentiallyFragmented) / totalStats.filesWithKnownSize 
+            : 0.0f;
+        
+        swprintf_s(diagMsg, 
+            L"[DIAGNOSTICS] Signatures: %llu | Known size: %llu (%.1f%%) | Validated: %llu | "
+            L"Fragmented: %llu (%.1f%%) | Severe: %llu",
+            totalStats.totalSignaturesFound,
+            totalStats.filesWithKnownSize,
+            knownSizePct,
+            totalStats.filesWithValidatedSize,
+            totalStats.potentiallyFragmented,
+            fragmentedPct,
+            totalStats.severelyFragmented
+        );
+        onProgress(diagMsg, 0.99f);
     }
     
     wchar_t completeMsg[256];

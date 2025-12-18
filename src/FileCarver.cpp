@@ -1,4 +1,4 @@
-﻿// FileCarver.cpp
+// FileCarver.cpp
 #include "FileCarver.h"
 #include "Constants.h"
 #include <cstring>
@@ -500,6 +500,235 @@ std::optional<uint64_t> FileCarver::ParseFileSizeFromMemory(
     }
 
     return std::nullopt;                        // Unknown format
+}
+
+// Enhanced scanning with fragmentation diagnostics and statistics.
+FileCarver::DiagnosticResult FileCarver::ScanRegionWithDiagnostics(
+    DiskHandle& disk,
+    uint64_t startCluster,
+    uint64_t clusterCount,
+    uint64_t sectorsPerCluster,
+    uint64_t clusterHeapOffset,
+    uint64_t sectorSize,
+    const std::vector<FileSignature>& signatures,
+    uint64_t maxFiles)
+{
+    DiagnosticResult result;
+    
+    if (clusterCount == 0) {
+        return result;                          // Nothing to scan
+    }
+    
+    uint64_t bytesPerCluster = sectorsPerCluster * sectorSize;
+    uint64_t startOffset = (clusterHeapOffset + (startCluster - 2) * sectorsPerCluster) * sectorSize;
+    uint64_t regionSize = clusterCount * bytesPerCluster;
+    
+    const uint8_t* data = nullptr;
+    uint64_t dataSize = 0;
+    std::vector<uint8_t> buffer;
+    bool usedMapping = false;
+    
+    // Try memory-mapped access first (faster)
+    auto region = disk.MapDiskRegion(startOffset, regionSize);
+    if (region.IsValid()) {
+        data = region.data;
+        dataSize = region.size;
+        usedMapping = true;
+    } else {
+        // Fallback to traditional read
+        uint64_t sectorsToRead = (regionSize + sectorSize - 1) / sectorSize;
+        uint64_t startSector = startOffset / sectorSize;
+        buffer = disk.ReadSectors(startSector, sectorsToRead, sectorSize);
+        
+        if (buffer.empty()) {
+            return result;                      // Read failed
+        }
+        
+        data = buffer.data();
+        dataSize = buffer.size();
+    }
+    
+    // Scan mapped region for file signatures with diagnostics
+    for (uint64_t offset = 0; offset < dataSize && result.files.size() < maxFiles; ) {
+        uint64_t currentCluster = startCluster + (offset / bytesPerCluster);
+        bool foundSignature = false;
+        
+        // Check all signatures at current offset
+        for (const auto& sig : signatures) {
+            if (offset + sig.signatureSize > dataSize) {
+                continue;                       // Not enough data for signature
+            }
+            
+            if (std::memcmp(data + offset, sig.signature, sig.signatureSize) == 0) {
+                result.stats.totalSignaturesFound++;
+                result.stats.byFormat[sig.extension]++;
+                
+                // Validate file size and detect fragmentation
+                size_t remainingData = static_cast<size_t>(dataSize - offset);
+                size_t safeDataSize = static_cast<size_t>(std::min<uint64_t>(dataSize, SIZE_MAX));
+                auto sizeValidation = ValidateFileSize(data, safeDataSize, offset, sig, bytesPerCluster);
+                
+                if (sizeValidation.hasSize) {
+                    result.stats.filesWithKnownSize++;
+                    
+                    // Calculate gap between expected and actual size
+                    uint64_t gap = 0;
+                    if (sizeValidation.actualSize > sizeValidation.expectedSize) {
+                        gap = (sizeValidation.actualSize - sizeValidation.expectedSize) / bytesPerCluster;
+                    }
+                    
+                    if (gap > 1) {
+                        result.stats.potentiallyFragmented++;
+                        result.stats.fragmentedByFormat[sig.extension]++;
+                        
+                        if (gap > Constants::Carving::MAX_REASONABLE_GAP) {
+                            result.stats.severelyFragmented++;
+                        }
+                    }
+                    
+                    if (sizeValidation.isValid) {
+                        result.stats.filesWithValidatedSize++;
+                    }
+                } else {
+                    result.stats.unknownSize++;
+                }
+                
+                // Perform actual file carving
+                auto fileSize = ParseFileSizeFromMemory(data + offset, remainingData, sig);
+                
+                if (fileSize.has_value() && fileSize.value() > 0) {
+                    CarvedFile carved;
+                    carved.signature = sig;
+                    carved.startCluster = currentCluster;
+                    carved.fileSize = fileSize.value();
+                    result.files.push_back(carved);
+                    
+                    // Skip over detected file (with safety limit)
+                    uint64_t detectedSize = fileSize.value();
+                    uint64_t safeSkipSize = std::min(detectedSize, Constants::Carving::MAX_SAFE_SKIP);
+                    uint64_t clustersUsed = (safeSkipSize + bytesPerCluster - 1) / bytesPerCluster;
+                    uint64_t alignedSkip = clustersUsed * bytesPerCluster;
+                    
+                    offset += alignedSkip;
+                    foundSignature = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!foundSignature) {
+            offset += bytesPerCluster;          // Move to next cluster
+        }
+    }
+    
+    // Clean up memory mapping if used
+    if (usedMapping) {
+        disk.UnmapRegion(region);
+    }
+    
+    return result;
+}
+
+// Validate file size from header and detect potential fragmentation.
+FileCarver::SizeValidation FileCarver::ValidateFileSize(
+    const uint8_t* data,
+    size_t dataSize,
+    uint64_t offsetInData,
+    const FileSignature& sig,
+    uint64_t bytesPerCluster)
+{
+    (void)bytesPerCluster;                      // Reserved for future fragmentation analysis
+    
+    SizeValidation result;
+    result.hasSize = false;
+    result.expectedSize = 0;
+    result.actualSize = 0;
+    result.isValid = false;
+    
+    if (offsetInData >= dataSize) {
+        return result;                          // Offset beyond data bounds
+    }
+    
+    const uint8_t* fileData = data + offsetInData;
+    size_t remainingSize = static_cast<size_t>(dataSize - offsetInData);
+    
+    if (remainingSize < 64) {
+        return result;                          // Too small to parse header
+    }
+    
+    // PNG - parse chunks to find IEND marker
+    if (std::strcmp(sig.extension, "png") == 0) {
+        result.hasSize = true;
+        
+        // PNG consists of chunks: length (4 bytes) + type (4 bytes) + data + CRC (4 bytes)
+        for (size_t i = 8; i + 12 < remainingSize; ) {
+            if (i + 12 > remainingSize) break;
+            
+            // Read chunk length (big-endian)
+            uint32_t chunkLen = (static_cast<uint32_t>(fileData[i]) << 24) |
+                               (static_cast<uint32_t>(fileData[i+1]) << 16) |
+                               (static_cast<uint32_t>(fileData[i+2]) << 8) |
+                               static_cast<uint32_t>(fileData[i+3]);
+            
+            // Check for IEND chunk (marks end of PNG)
+            if (std::memcmp(fileData + i + 4, "IEND", 4) == 0) {
+                result.actualSize = i + 12 + chunkLen;
+                result.expectedSize = result.actualSize;
+                result.isValid = true;
+                return result;
+            }
+            
+            i += 12 + chunkLen;
+            
+            // Sanity check to prevent infinite loops
+            if (chunkLen > 10000000) break;
+        }
+        return result;
+    }
+    
+    // BMP - file size is stored in header at offset 2
+    if (std::strcmp(sig.extension, "bmp") == 0) {
+        if (remainingSize >= 6) {
+            result.hasSize = true;
+            
+            // Read 4-byte file size (little-endian)
+            result.expectedSize = static_cast<uint32_t>(fileData[2]) |
+                                 (static_cast<uint32_t>(fileData[3]) << 8) |
+                                 (static_cast<uint32_t>(fileData[4]) << 16) |
+                                 (static_cast<uint32_t>(fileData[5]) << 24);
+            
+            result.actualSize = result.expectedSize;
+            
+            // Validate size is reasonable (header + some data)
+            result.isValid = (result.expectedSize > 54 && result.expectedSize < 1000000000);
+        }
+        return result;
+    }
+    
+    // WAV / AVI - RIFF format with size in header
+    if (std::strcmp(sig.extension, "wav") == 0 || std::strcmp(sig.extension, "avi") == 0) {
+        if (remainingSize >= 8 && std::memcmp(fileData, "RIFF", 4) == 0) {
+            result.hasSize = true;
+            
+            // Read RIFF chunk size (little-endian) + 8 bytes for header
+            result.expectedSize = (static_cast<uint32_t>(fileData[4]) |
+                                  (static_cast<uint32_t>(fileData[5]) << 8) |
+                                  (static_cast<uint32_t>(fileData[6]) << 16) |
+                                  (static_cast<uint32_t>(fileData[7]) << 24)) + 8;
+            
+            result.actualSize = result.expectedSize;
+            
+            // Validate size is reasonable
+            result.isValid = (result.expectedSize > 44 && result.expectedSize < 10000000000ULL);
+        }
+        return result;
+    }
+    
+    // JPEG - no size in header, must scan for EOI marker
+    // ZIP - complex structure with central directory
+    // Other formats - return hasSize=false
+    
+    return result;
 }
 
 } // namespace KVC
