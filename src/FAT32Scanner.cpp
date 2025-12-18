@@ -1,5 +1,7 @@
 ﻿// FAT32Scanner.cpp
 #include "FAT32Scanner.h"
+#include "Constants.h"
+#include "StringUtils.h"
 #include <algorithm>
 #include <cwctype>
 #include <cstring>
@@ -140,7 +142,7 @@ void FAT32Scanner::ProcessDirectory(
     const ScanContext& context)
 {
     // Read directory content (limit to 2MB to avoid huge corrupted chains).
-    auto data = ReadClusterChain(disk, dirItem.firstCluster, context, 2 * 1024 * 1024);
+    auto data = ReadClusterChain(disk, dirItem.firstCluster, context, Constants::DIRECTORY_READ_LIMIT);
     if (data.empty()) return;
 
     std::wstring lfnBuffer;
@@ -158,8 +160,7 @@ void FAT32Scanner::ProcessDirectory(
         // ====================================================================
         if (attr == 0x0F) {
             const FATLFNEntry* lfn = reinterpret_cast<const FATLFNEntry*>(raw);
-            
-            // [FIX 2] Handle Truncated Names Issue
+
             // If the entry is deleted (marker 0xE5), the sequence number starts with 0xE5 (11100101).
             // The 0x40 bit (6th bit) marks the "Last LFN entry".
             // Since 0xE5 & 0x40 is TRUE, every deleted LFN entry looks like the start of a name,
@@ -236,8 +237,7 @@ void FAT32Scanner::ProcessDirectory(
         lfnBuffer.clear();
         // Extract cluster number from high and low words.
         uint32_t cluster = (static_cast<uint32_t>(entry->clusterHigh) << 16) | entry->clusterLow;
-        
-        // [FIX 3] Handle Duplicates
+
         // Append cluster ID to deleted files to ensure unique naming.
         if (isDeleted && cluster >= 2) {
             // Find insertion point before extension.
@@ -295,15 +295,14 @@ void FAT32Scanner::ProcessDirectory(
                 result.name = name;
                 result.path = L"<FAT32>\\" + fullPath;
                 result.size = entry->fileSize;
-                result.sizeFormatted = FormatFileSize(entry->fileSize);
+                result.sizeFormatted = StringUtils::FormatFileSize(entry->fileSize);
                 result.filesystemType = L"FAT32";
                 result.isRecoverable = true;
                 result.clusterSize = context.clusterSize;
                 
                 // For deleted files, assume contiguous allocation (FAT chain is cleared on deletion).
                 if (cluster >= 2 && result.size > 0) {
-                    
-                    // [FIX 1] The Data Area Offset Issue
+
                     // RecoveryEngine expects a global LCN (Linear Cluster Number relative to disk start),
                     // but 'cluster' here is an index into the FAT data area.
                     // We must convert FAT Cluster Index -> Physical Cluster Index.
@@ -339,7 +338,7 @@ std::vector<uint8_t> FAT32Scanner::ReadClusterChain(
     uint32_t currentCluster = startCluster;
     uint64_t bytesRead = 0;
     // Safety limit for loops (~8MB at 4KB clusters).
-    int maxClusters = 2048;
+    int maxClusters = Constants::FAT32::MAX_CHAIN_CLUSTERS;
 
     while (currentCluster >= 2 && currentCluster < 0x0FFFFFF7 && maxClusters > 0) {
         // Calculate sector address: Sector = DataStart + (Cluster - 2) * SectorsPerCluster.
@@ -363,17 +362,7 @@ std::vector<uint8_t> FAT32Scanner::ReadClusterChain(
 
 // Format file size into human-readable string.
 std::wstring FAT32Scanner::FormatFileSize(uint64_t bytes) {
-    wchar_t buffer[64];
-    if (bytes >= 1000000000) {
-        swprintf_s(buffer, L"%.2f GB", bytes / 1000000000.0);
-    } else if (bytes >= 1000000) {
-        swprintf_s(buffer, L"%.2f MB", bytes / 1000000.0);
-    } else if (bytes >= 1000) {
-        swprintf_s(buffer, L"%.2f KB", bytes / 1000.0);
-    } else {
-        swprintf_s(buffer, L"%llu bytes", bytes);
-    }
-    return buffer;
+    return StringUtils::FormatFileSize(bytes);
 }
 
 } // namespace KVC

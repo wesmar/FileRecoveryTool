@@ -1,6 +1,8 @@
 ﻿// NTFSScanner.cpp
 #include "NTFSScanner.h"
 #include "RecoveryApplication.h"
+#include "Constants.h"
+#include "StringUtils.h"
 #include <cstring>
 #include <algorithm>
 
@@ -174,7 +176,7 @@ bool NTFSScanner::ParseMFTRecord(const std::vector<uint8_t>& data, uint64_t reco
                                resAttr->valueLength);
                     
                     fileEntry.size = resAttr->valueLength;
-                    fileEntry.sizeFormatted = FormatFileSize(resAttr->valueLength);
+                    fileEntry.sizeFormatted = StringUtils::FormatFileSize(resAttr->valueLength);
                     fileEntry.isRecoverable = true;
                     hasData = true;
                 }
@@ -192,7 +194,7 @@ bool NTFSScanner::ParseMFTRecord(const std::vector<uint8_t>& data, uint64_t reco
                     // Parse data runs to get cluster locations
                     fileEntry.clusterRanges = ParseDataRuns(runData, maxRunSize, boot.bytesPerSector * boot.sectorsPerCluster);
                     fileEntry.size = nrAttr->realSize;
-                    fileEntry.sizeFormatted = FormatFileSize(nrAttr->realSize);
+                    fileEntry.sizeFormatted = StringUtils::FormatFileSize(nrAttr->realSize);
                     fileEntry.isRecoverable = !fileEntry.clusterRanges.empty();
                     hasData = true;
                 }
@@ -250,7 +252,7 @@ std::wstring NTFSScanner::ReconstructPath(DiskHandle& disk, const NTFSBootSector
     static std::set<uint64_t> visitedRecords;
     
     // First call in chain - clear visited set
-    if (visitedRecords.empty() || visitedRecords.size() > 100) {
+    if (visitedRecords.empty() || visitedRecords.size() > Constants::NTFS::PATH_CACHE_SIZE_LIMIT) {
         visitedRecords.clear();
     }
     
@@ -260,7 +262,7 @@ std::wstring NTFSScanner::ReconstructPath(DiskHandle& disk, const NTFSBootSector
     }
     
     // Limit recursion depth
-    if (visitedRecords.size() > 50) return L"<deleted>\\" + filename;
+    if (visitedRecords.size() > Constants::NTFS::PATH_CACHE_DEPTH_LIMIT) return L"<deleted>\\" + filename;
     
     visitedRecords.insert(mftRecord);
     
@@ -346,17 +348,16 @@ bool NTFSScanner::ScanVolume(
     uint64_t recordsScanned = 0;
     uint64_t filesFound = 0;
     
-    const uint64_t RECORDS_PER_BATCH = 1024;    // Batch size for efficient I/O
     uint64_t bytesPerCluster = boot.bytesPerSector * boot.sectorsPerCluster;
     uint64_t mftRecordSize = (boot.clustersPerMFTRecord >= 0) 
         ? boot.clustersPerMFTRecord * bytesPerCluster
         : (1ULL << (-boot.clustersPerMFTRecord));
 
-    uint64_t batchBufferSize = RECORDS_PER_BATCH * mftRecordSize;
+    uint64_t batchBufferSize = Constants::NTFS::RECORDS_PER_BATCH * mftRecordSize;
     uint64_t sectorsPerBatch = (batchBufferSize + boot.bytesPerSector - 1) / boot.bytesPerSector;
 
     // Process MFT in batches for better performance
-    for (uint64_t i = 0; i < maxRecords && !shouldStop; i += RECORDS_PER_BATCH) {
+    for (uint64_t i = 0; i < maxRecords && !shouldStop; i += Constants::NTFS::RECORDS_PER_BATCH) {
         if ((i % 100) == 0 && shouldStop) break;
 
         uint64_t mftOffset = boot.mftCluster * bytesPerCluster;
@@ -369,12 +370,12 @@ bool NTFSScanner::ScanVolume(
                 onProgress(L"Failed to read MFT data from disk", 0.0f);
                 return false;
             }
-            recordsScanned += RECORDS_PER_BATCH;
+            recordsScanned += Constants::NTFS::RECORDS_PER_BATCH;
             continue;
         }
 
         // Process each record in the batch
-        for (uint64_t j = 0; j < RECORDS_PER_BATCH; ++j) {
+        for (uint64_t j = 0; j < Constants::NTFS::RECORDS_PER_BATCH; ++j) {
             uint64_t currentRecordIdx = i + j;
             if (currentRecordIdx >= maxRecords || shouldStop) break;
 
@@ -395,7 +396,7 @@ bool NTFSScanner::ScanVolume(
         }
 
         // Update progress every 10240 records
-        if ((i % 10240) == 0) {
+        if ((i % Constants::Progress::MFT_SCAN_INTERVAL) == 0) {
             float progress = static_cast<float>(i) / maxRecords;
             wchar_t statusMsg[256];
             swprintf_s(statusMsg, L"Stage 1 (MFT): Scanned %llu records, found %llu deleted files", i, filesFound);
@@ -418,8 +419,7 @@ std::vector<ClusterRange> NTFSScanner::ParseDataRuns(const uint8_t* runData, siz
     
     size_t offset = 0;
     int64_t currentLCN = 0;
-    const uint64_t MAX_FRAGMENTS = 1000000;
-    const uint64_t MAX_CLUSTERS_TOTAL = (100ULL * 1024 * 1024 * 1024) / (bytesPerCluster > 0 ? bytesPerCluster : 4096);
+    const uint64_t maxClustersTotal = (100ULL * Constants::GIGABYTE) / (bytesPerCluster > 0 ? bytesPerCluster : Constants::CLUSTER_SIZE_DEFAULT);
     
     uint64_t clustersAccumulated = 0;
     
@@ -445,7 +445,6 @@ std::vector<ClusterRange> NTFSScanner::ParseDataRuns(const uint8_t* runData, siz
             runLength |= (static_cast<uint64_t>(runData[offset + i]) << (i * 8));
         }
         offset += lengthBytes;
-
         // Read LCN offset (signed, little-endian)
         int64_t lcnOffset = 0;
         for (uint8_t i = 0; i < offsetBytes; i++) {
@@ -455,7 +454,7 @@ std::vector<ClusterRange> NTFSScanner::ParseDataRuns(const uint8_t* runData, siz
         clustersAccumulated += runLength;
         
         // Check limits to prevent excessive fragmentation
-        if (ranges.size() > MAX_FRAGMENTS || clustersAccumulated > MAX_CLUSTERS_TOTAL) {
+        if (ranges.size() > Constants::NTFS::MAX_FRAGMENTS || clustersAccumulated > maxClustersTotal) {
             break;
         }
         
@@ -476,7 +475,6 @@ std::vector<ClusterRange> NTFSScanner::ParseDataRuns(const uint8_t* runData, siz
             ranges.push_back(range);
         }
     }
-
     // Merge adjacent ranges for efficiency
     if (ranges.empty()) return ranges;
     

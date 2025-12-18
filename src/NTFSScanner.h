@@ -9,6 +9,8 @@
 #pragma once
 
 #include "DiskForensicsCore.h"
+#include "Constants.h"
+#include "StringUtils.h"
 #include <map>
 #include <vector>
 

@@ -8,6 +8,7 @@
 
 #include "DiskForensicsCore.h"
 #include "FileSignatures.h"
+#include "Constants.h"
 #include <vector>
 #include <optional>
 

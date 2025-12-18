@@ -8,6 +8,8 @@
 #pragma once
 
 #include "DiskForensicsCore.h"
+#include "Constants.h"
+#include "StringUtils.h"
 #include <vector>
 #include <cstdint>
 #include <deque>

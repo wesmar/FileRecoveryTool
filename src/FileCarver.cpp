@@ -1,5 +1,6 @@
 ﻿// FileCarver.cpp
 #include "FileCarver.h"
+#include "Constants.h"
 #include <cstring>
 #include <algorithm>
 
@@ -52,8 +53,7 @@ std::optional<uint64_t> FileCarver::ParseFileSize(
     uint64_t sector = clusterHeapOffset + ((cluster - 2) * sectorsPerCluster);
     
     // Read 256KB for header parsing
-    uint64_t clustersToRead = 64;
-    auto data = disk.ReadSectors(sector, sectorsPerCluster * clustersToRead, sectorSize);
+    auto data = disk.ReadSectors(sector, sectorsPerCluster * Constants::Carving::HEADER_READ_CLUSTERS, sectorSize);
     
     if (data.empty()) {
         return std::nullopt;
@@ -430,9 +430,8 @@ std::vector<FileCarver::CarvedFile> FileCarver::ScanRegionMemoryMapped(
                     
                     // Skip over detected file (with safety limit)
                     uint64_t detectedSize = fileSize.value();
-                    const uint64_t MAX_SAFE_SKIP = 64ULL * 1024 * 1024;
                     
-                    uint64_t safeSkipSize = std::min(detectedSize, MAX_SAFE_SKIP);
+                    uint64_t safeSkipSize = std::min(detectedSize, Constants::Carving::MAX_SAFE_SKIP);
                     uint64_t clustersUsed = (safeSkipSize + bytesPerCluster - 1) / bytesPerCluster;
                     uint64_t alignedSkip = clustersUsed * bytesPerCluster;
                     
@@ -467,7 +466,7 @@ std::optional<uint64_t> FileCarver::ParseFileSizeFromMemory(
     }
 
     // Use same parsers but from memory buffer instead of disk I/O
-    std::vector<uint8_t> buffer(data, data + std::min<size_t>(dataSize, 256 * 1024));
+    std::vector<uint8_t> buffer(data, data + std::min<size_t>(dataSize, Constants::Carving::HEADER_READ_SIZE));
     
     if (std::strcmp(signature.extension, "png") == 0) {
         return ParsePngSize(buffer);

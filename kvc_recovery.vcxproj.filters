@@ -53,6 +53,12 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Constants.h">
+      <Filter>Application</Filter>
+    </ClInclude>
+    <ClInclude Include="src\StringUtils.h">
+      <Filter>Application</Filter>
+    </ClInclude>	
     <ClInclude Include="src\RecoveryApplication.h">
       <Filter>Application</Filter>
     </ClInclude>

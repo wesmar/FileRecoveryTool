@@ -3,6 +3,7 @@
 
 #include "RecoveryApplication.h"
 #include "RecoveryEngine.h"
+#include "StringUtils.h"
 #include "resource.h"
 #include <CommCtrl.h>
 #include <commdlg.h>

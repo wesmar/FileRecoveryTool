@@ -1,8 +1,9 @@
 <Solution>
   <Configurations>
     <BuildType Name="Release" />
+    <BuildType Name="Release_MinSize" />
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="kvc_recovery.vcxproj" Id="8bc9ceb8-8b4a-11e8-9eb6-24687b634321" />
+  <Project Path="kvc_recovery.vcxproj" />
 </Solution>

@@ -1,5 +1,6 @@
 ﻿// UsnJournalScanner.cpp
 #include "UsnJournalScanner.h"
+#include "Constants.h"
 #include <cstring>
 #include <algorithm>
 
@@ -19,10 +20,7 @@ std::map<uint64_t, std::vector<UsnRecord>> UsnJournalScanner::ParseJournal(
         auto boot = ReadBootSector(disk);
         
         // $Extend\$UsnJrnl is usually at MFT record 38.
-        const uint64_t USNJRNL_RECORD = 38;
-        
-        // Read MFT record for $UsnJrnl.
-        auto usnjrnlData = ReadMFTRecord(disk, boot, USNJRNL_RECORD);
+        auto usnjrnlData = ReadMFTRecord(disk, boot, Constants::NTFS::USNJRNL_RECORD_NUMBER);
         if (usnjrnlData.empty()) {
             return recordsByMft;
         }
@@ -293,15 +291,14 @@ std::vector<uint8_t> UsnJournalScanner::ReadClusters(
     uint64_t sectorsPerCluster = bytesPerCluster / sectorSize;
 
     // Limit total read to avoid excessive memory (~400MB at 4KB clusters).
-    uint64_t maxClusters = 100000;
     uint64_t clustersRead = 0;
 
     for (const auto& range : ranges) {
-        if (clustersRead >= maxClusters) {
+        if (clustersRead >= Constants::NTFS::MAX_CLUSTER_CHAIN_READ) {
             break;
         }
 
-        uint64_t clustersToRead = std::min(range.count, maxClusters - clustersRead);
+        uint64_t clustersToRead = std::min(range.count, Constants::NTFS::MAX_CLUSTER_CHAIN_READ - clustersRead);
         
         // Read each cluster in the range.
         for (uint64_t i = 0; i < clustersToRead; i++) {

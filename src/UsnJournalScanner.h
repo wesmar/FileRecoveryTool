@@ -7,6 +7,7 @@
 #pragma once
 
 #include "DiskForensicsCore.h"
+#include "Constants.h"
 #include "RecoveryApplication.h"
 #include <cstdint>
 #include <map>

@@ -1,6 +1,7 @@
 ﻿// RecoveryEngine.cpp
 #define NOMINMAX
 #include "RecoveryEngine.h"
+#include "StringUtils.h"
 #include <fstream>
 #include <filesystem>
 #include <cwctype>

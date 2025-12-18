@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 // DiskForensicsCore.h - Core Disk Forensics Engine
 // ============================================================================
 // Manages low-level disk I/O and coordinates forensic scanning operations.
@@ -24,17 +24,17 @@ struct ClusterRange {
 };
 
 struct DeletedFileEntry {
-    std::wstring name;              // Filename
-    std::wstring path;              // Virtual path
-    uint64_t size;                  // Size in bytes
-    std::wstring sizeFormatted;     // Human-readable size
-    uint64_t fileRecord;            // MFT record number
-    std::vector<uint64_t> clusters; // Individual clusters
-    std::vector<ClusterRange> clusterRanges; // Cluster ranges
-    std::vector<uint8_t> residentData;       // Inline data
-    uint64_t clusterSize;           // Bytes per cluster
-    bool isRecoverable;             // Recovery status
-    std::wstring filesystemType;    // "NTFS", "ExFAT"
+    std::wstring name;
+    std::wstring path;
+    uint64_t size;
+    std::wstring sizeFormatted;
+    uint64_t fileRecord;
+    std::vector<uint64_t> clusters;
+    std::vector<ClusterRange> clusterRanges;
+    std::vector<uint8_t> residentData;
+    uint64_t clusterSize;
+    bool isRecoverable;
+    std::wstring filesystemType;
     std::chrono::system_clock::time_point deletedTime;
     bool hasDeletedTime;
 };
@@ -50,10 +50,7 @@ struct ScanConfiguration {
     uint64_t ntfsMftSystemDriveLimit = 300000;
     uint64_t ntfsMftSpareDriveLimit = 10000000;
     uint64_t usnJournalLimit = 1000000;
-    
-    // Set to 0 to scan the entire disk, or a positive number to limit the scan (e.g. for testing)
-    uint64_t fileCarvingClusterLimit = 0; 
-    
+    uint64_t fileCarvingClusterLimit = 0;
     uint64_t fileCarvingMaxFiles = 10000000;
     uint64_t exfatDirectoryEntriesLimit = 1000000;
     size_t parallelThreads = 4;
@@ -75,7 +72,6 @@ public:
     uint64_t GetSectorSize() const;
     uint64_t GetDiskSize() const;
 
-    // Memory-mapped I/O for fast sequential scanning
     struct MappedRegion {
         const uint8_t* data;
         uint64_t size;
@@ -107,7 +103,7 @@ public:
     ~DiskForensicsCore();
 
     using ProgressCallback = std::function<void(const std::wstring&, float)>;
-    using FileFoundCallback = std::function<void(const DeletedFileEntry&)>; // Definition must be visible here
+    using FileFoundCallback = std::function<void(const DeletedFileEntry&)>;
 
     FilesystemType DetectFilesystem(wchar_t driveLetter);
     
@@ -150,7 +146,6 @@ private:
         bool& shouldStop
     );
     
-    // Optimized version using memory-mapped I/O (faster for 64-bit systems)
     bool ProcessFileCarvingMemoryMapped(
         DiskHandle& disk,
         FileFoundCallback onFileFound,

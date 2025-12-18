@@ -1,5 +1,7 @@
 ﻿// ExFATScanner.cpp
 #include "ExFATScanner.h"
+#include "Constants.h"
+#include "StringUtils.h"
 #include <algorithm>
 #include <cwctype>
 #include <vector>
@@ -134,7 +136,7 @@ void ExFATScanner::ProcessDirectory(
     bool& shouldStop)
 {
     // Read directory cluster chain with size limit.
-    auto dirData = ReadClusterChain(disk, dirItem.firstCluster, context, shouldStop, 2 * 1024 * 1024);
+    auto dirData = ReadClusterChain(disk, dirItem.firstCluster, context, shouldStop, Constants::DIRECTORY_READ_LIMIT);
     if (dirData.empty()) {
         return;
     }
@@ -202,8 +204,7 @@ void ExFATScanner::ProcessDirectory(
                 // Process deleted files only.
                 if (!currentIsDir && currentDeleted) {
                     // Sanity check for file size.
-                    const uint64_t MAX_DELETED_FILE_SIZE = 10ULL * 1024 * 1024 * 1024; // 10GB
-                    if (currentSize > MAX_DELETED_FILE_SIZE) {
+                    if (currentSize > Constants::ExFAT::MAX_DELETED_FILE_SIZE) {
                         continue;
                     }
 
@@ -228,7 +229,7 @@ void ExFATScanner::ProcessDirectory(
                         entry.name = currentName;
                         entry.path = L"<exFAT>\\" + fullPath;
                         entry.size = currentSize;
-                        entry.sizeFormatted = FormatFileSize(currentSize);
+                        entry.sizeFormatted = StringUtils::FormatFileSize(currentSize);
                         entry.filesystemType = L"exFAT";
                         entry.isRecoverable = true;
                         entry.clusterSize = context.sectorSize * context.sectorsPerCluster;
@@ -243,8 +244,7 @@ void ExFATScanner::ProcessDirectory(
                             // CRITICAL: For DELETED files, FAT entries are zeroed out!
                             // We MUST assume contiguous allocation (sequential clusters)
                             // DO NOT read FAT for deleted files - it will only give us the first cluster
-                            const uint64_t MAX_DELETED_SEQUENTIAL_SIZE = 10ULL * 1024 * 1024 * 1024; // 10 GB
-                            uint64_t maxClustersNeeded = MAX_DELETED_SEQUENTIAL_SIZE / entry.clusterSize;
+                            uint64_t maxClustersNeeded = Constants::ExFAT::MAX_SEQUENTIAL_SIZE / entry.clusterSize;
                             uint64_t clustersToAdd = std::min(clustersNeeded, maxClustersNeeded);
                             for(uint64_t clusterIdx = 0; clusterIdx < clustersToAdd; clusterIdx++) {
                                 uint32_t nextCluster = currentCluster + static_cast<uint32_t>(clusterIdx);
@@ -375,17 +375,7 @@ std::vector<uint32_t> ExFATScanner::FollowFATChain(
 
 // Format file size into human-readable string.
 std::wstring ExFATScanner::FormatFileSize(uint64_t bytes) {
-    wchar_t buffer[64];
-    if (bytes >= 1000000000) {
-        swprintf_s(buffer, L"%.2f GB", bytes / 1000000000.0);
-    } else if (bytes >= 1000000) {
-        swprintf_s(buffer, L"%.2f MB", bytes / 1000000.0);
-    } else if (bytes >= 1000) {
-        swprintf_s(buffer, L"%.2f KB", bytes / 1000.0);
-    } else {
-        swprintf_s(buffer, L"%llu bytes", bytes);
-    }
-    return buffer;
+    return StringUtils::FormatFileSize(bytes);
 }
 
 } // namespace KVC
