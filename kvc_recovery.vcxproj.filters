@@ -24,6 +24,9 @@
     <ClCompile Include="src\main.cpp">
       <Filter>Application</Filter>
     </ClCompile>
+    <ClCompile Include="src\main_cli.cpp">
+      <Filter>Application</Filter>
+    </ClCompile>
     <ClCompile Include="src\RecoveryApplication.cpp">
       <Filter>Application</Filter>
     </ClCompile>
@@ -53,6 +56,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\main_cli.h">
+      <Filter>Application</Filter>
+    </ClInclude>
     <ClInclude Include="src\Constants.h">
       <Filter>Application</Filter>
     </ClInclude>

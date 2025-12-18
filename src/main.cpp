@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 // KVC File Recovery Tool - Main Entry Point
 // ============================================================================
 // Professional data salvage tool for Windows with WinAPI GUI
@@ -7,11 +7,16 @@
 //   - USN Journal analysis for deletion events
 //   - File carving from raw disk sectors
 //
+// Dual Mode Support:
+//   - GUI mode: Launch without arguments (default)
+//   - CLI mode: Launch with --cli argument for command-line operation
+//
 // (c) 2025 - Modern C++ Implementation
 // ============================================================================
 
 #define NOMINMAX  // Prevent Windows.h min/max macros
 #include "RecoveryApplication.h"
+#include "main_cli.h"
 #include "resource.h"
 #include <Windows.h>
 #include <CommCtrl.h>
@@ -28,7 +33,29 @@ int WINAPI wWinMain(
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
-    // Initialize COM library (required for shell dialogs like Save File and Browse Folder)
+    // Parse command line to detect CLI mode
+    int argc;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    
+    // CLI mode detected - run command-line interface
+    if (argc > 1) {
+        HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        if (FAILED(hr)) {
+            wprintf(L"[ERROR] Failed to initialize COM library\n");
+            LocalFree(argv);
+            return 3;
+        }
+        
+        int result = KVC::RunCLI(argc, argv);
+        
+        CoUninitialize();
+        LocalFree(argv);
+        return result;
+    }
+    
+    LocalFree(argv);
+
+    // GUI mode - initialize COM library (required for shell dialogs like Save File and Browse Folder)
     // This fixes the issue where Export/Recover dialogs wouldn't appear
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     if (FAILED(hr)) {
