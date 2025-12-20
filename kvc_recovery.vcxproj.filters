@@ -33,6 +33,9 @@
     <ClCompile Include="src\DiskForensicsCore.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="src\FragmentedRecoveryEngine.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="src\NTFSScanner.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -69,6 +72,15 @@
       <Filter>Application</Filter>
     </ClInclude>
     <ClInclude Include="src\DiskForensicsCore.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ForensicsExceptions.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FragmentedFile.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FragmentedRecoveryEngine.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="src\NTFSScanner.h">

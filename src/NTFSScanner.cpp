@@ -1,4 +1,4 @@
-﻿// NTFSScanner.cpp
+// NTFSScanner.cpp
 #include "NTFSScanner.h"
 #include "RecoveryApplication.h"
 #include "Constants.h"
@@ -8,7 +8,206 @@
 
 namespace KVC {
 
-NTFSScanner::NTFSScanner() = default;
+// ============================================================================
+// NTFSDataRunParser Implementation
+// ============================================================================
+
+uint64_t NTFSDataRunParser::ReadVarInt(const uint8_t* data, uint8_t numBytes) {
+    if (numBytes == 0 || numBytes > 8) return 0;
+    
+    uint64_t value = 0;
+    for (uint8_t i = 0; i < numBytes; ++i) {
+        value |= static_cast<uint64_t>(data[i]) << (i * 8);
+    }
+    return value;
+}
+
+int64_t NTFSDataRunParser::ReadSignedVarInt(const uint8_t* data, uint8_t numBytes) {
+    if (numBytes == 0 || numBytes > 8) return 0;
+    
+    int64_t value = 0;
+    for (uint8_t i = 0; i < numBytes; ++i) {
+        value |= static_cast<int64_t>(data[i]) << (i * 8);
+    }
+    
+    // Sign extend if high bit is set
+    if (numBytes > 0 && (data[numBytes - 1] & 0x80)) {
+        for (uint8_t i = numBytes; i < 8; ++i) {
+            value |= static_cast<int64_t>(0xFF) << (i * 8);
+        }
+    }
+    
+    return value;
+}
+
+NTFSDataRunParser::ParseResult NTFSDataRunParser::Parse(
+    const uint8_t* runData,
+    size_t maxSize,
+    uint64_t bytesPerCluster,
+    uint64_t maxClusterNumber)
+{
+    ParseResult result;
+    result.valid = false;
+    
+    if (runData == nullptr || maxSize == 0 || bytesPerCluster == 0) {
+        result.errorMessage = "Invalid parameters";
+        return result;
+    }
+    
+    size_t offset = 0;
+    int64_t currentLCN = 0;
+    uint64_t currentFileOffset = 0;
+    
+    // Maximum fragments to prevent infinite loops on corrupt data
+    constexpr size_t MAX_FRAGMENTS = 1000000;
+    
+    while (offset < maxSize && result.runs.size() < MAX_FRAGMENTS) {
+        uint8_t header = runData[offset];
+        
+        // 0x00 marks end of data runs
+        if (header == 0) {
+            result.valid = true;
+            break;
+        }
+        
+        // Parse header byte: low nibble = length bytes, high nibble = offset bytes
+        uint8_t lengthBytes = header & 0x0F;
+        uint8_t offsetBytes = (header >> 4) & 0x0F;
+        
+        // Validate field sizes
+        if (lengthBytes == 0 || lengthBytes > 8 || offsetBytes > 8) {
+            result.errorMessage = "Invalid data run header at offset " + std::to_string(offset);
+            return result;
+        }
+        
+        offset++;
+        
+        // Check bounds for reading
+        if (offset + lengthBytes + offsetBytes > maxSize) {
+            result.errorMessage = "Data run extends beyond buffer";
+            return result;
+        }
+        
+        // Read cluster count (run length)
+        uint64_t runLength = ReadVarInt(runData + offset, lengthBytes);
+        offset += lengthBytes;
+        
+        // Validate run length
+        if (runLength == 0) {
+            result.errorMessage = "Zero-length run at offset " + std::to_string(offset - lengthBytes);
+            return result;
+        }
+        
+        // Check for impossibly large run length (corruption indicator)
+        if (runLength > 0x0FFFFFFFFFFFF) {
+            result.errorMessage = "Run length exceeds maximum value";
+            return result;
+        }
+        
+        // Read LCN offset (relative to previous run)
+        int64_t lcnOffset = 0;
+        if (offsetBytes > 0) {
+            lcnOffset = ReadSignedVarInt(runData + offset, offsetBytes);
+            offset += offsetBytes;
+        }
+        
+        // Update current LCN (cumulative)
+        currentLCN += lcnOffset;
+        
+        // offsetBytes == 0 indicates a sparse run (no physical storage)
+        // We skip sparse runs as they don't need recovery
+        if (offsetBytes > 0) {
+            // Validate LCN is positive (negative LCN indicates corruption)
+            if (currentLCN < 0) {
+                result.errorMessage = "Negative LCN calculated: " + std::to_string(currentLCN);
+                return result;
+            }
+            
+            // Validate against disk bounds if provided
+            if (maxClusterNumber > 0) {
+                uint64_t runEndCluster = static_cast<uint64_t>(currentLCN) + runLength;
+                if (runEndCluster > maxClusterNumber) {
+                    result.errorMessage = "Run extends beyond disk: cluster " + 
+                        std::to_string(runEndCluster) + " > max " + std::to_string(maxClusterNumber);
+                    return result;
+                }
+            }
+            
+            // Create ClusterRun with file offset
+            ClusterRun run;
+            run.startCluster = static_cast<uint64_t>(currentLCN);
+            run.clusterCount = runLength;
+            run.fileOffset = currentFileOffset;
+            
+            result.runs.push_back(run);
+            result.totalClusters += runLength;
+        }
+        
+        // Update file offset (sparse runs still consume file space)
+        currentFileOffset += runLength * bytesPerCluster;
+    }
+    
+    // Check if we hit the fragment limit (potential corruption)
+    if (result.runs.size() >= MAX_FRAGMENTS) {
+        result.errorMessage = "Maximum fragment count exceeded";
+        result.valid = false;
+        return result;
+    }
+    
+    // Calculate total bytes
+    result.totalBytes = result.totalClusters * bytesPerCluster;
+    result.valid = true;
+    
+    return result;
+}
+
+bool NTFSDataRunParser::ValidateRuns(
+    const std::vector<ClusterRun>& runs,
+    uint64_t maxClusterNumber,
+    std::string* errorOut)
+{
+    for (size_t i = 0; i < runs.size(); ++i) {
+        const auto& run = runs[i];
+        
+        // Check for zero-length runs
+        if (run.clusterCount == 0) {
+            if (errorOut) *errorOut = "Zero-length run at index " + std::to_string(i);
+            return false;
+        }
+        
+        // Check cluster bounds
+        if (run.startCluster >= maxClusterNumber) {
+            if (errorOut) *errorOut = "Start cluster out of bounds: " + std::to_string(run.startCluster);
+            return false;
+        }
+        
+        uint64_t endCluster = run.startCluster + run.clusterCount;
+        if (endCluster > maxClusterNumber) {
+            if (errorOut) *errorOut = "Run extends beyond disk";
+            return false;
+        }
+        
+        // Check for overlapping runs (file offset should be monotonically increasing)
+        if (i > 0) {
+            const auto& prevRun = runs[i - 1];
+            if (run.fileOffset < prevRun.fileOffset) {
+                if (errorOut) *errorOut = "Non-monotonic file offsets detected";
+                return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
+// ============================================================================
+// NTFSScanner Implementation
+// ============================================================================
+
+NTFSScanner::NTFSScanner() 
+    : m_diskTotalClusters(0)
+{}
+
 NTFSScanner::~NTFSScanner() = default;
 
 // Read NTFS boot sector to obtain filesystem geometry.
@@ -78,15 +277,147 @@ std::vector<uint8_t> NTFSScanner::ReadMFTRecord(DiskHandle& disk, const NTFSBoot
     
     if (offsetInSector >= data.size()) return {};
 
-	std::vector<uint8_t> result(
-		data.begin() + static_cast<size_t>(offsetInSector), 
-		data.begin() + static_cast<size_t>(offsetInSector + mftRecordSize)
-	);
+    std::vector<uint8_t> result(
+        data.begin() + static_cast<size_t>(offsetInSector), 
+        data.begin() + static_cast<size_t>(offsetInSector + mftRecordSize)
+    );
     
     // Some disks/pendrives may have fixups already applied or not need them
     ApplyFixups(result, boot.bytesPerSector);
     
     return result;
+}
+
+// NEW: Enhanced data run parsing with validation
+NTFSDataRunParser::ParseResult NTFSScanner::ParseDataRunsEnhanced(
+    const uint8_t* runData,
+    size_t maxSize,
+    uint64_t bytesPerCluster,
+    uint64_t maxCluster)
+{
+    return NTFSDataRunParser::Parse(runData, maxSize, bytesPerCluster, maxCluster);
+}
+
+// Legacy interface - wraps new parser for compatibility
+std::vector<ClusterRange> NTFSScanner::ParseDataRuns(const uint8_t* runData, size_t maxSize, uint64_t bytesPerCluster) {
+    auto result = NTFSDataRunParser::Parse(runData, maxSize, bytesPerCluster, m_diskTotalClusters);
+    
+    if (!result.valid) {
+        return {};
+    }
+    
+    // Convert ClusterRun to ClusterRange (legacy format)
+    std::vector<ClusterRange> ranges;
+    ranges.reserve(result.runs.size());
+    
+    for (const auto& run : result.runs) {
+        ClusterRange range;
+        range.start = run.startCluster;
+        range.count = run.clusterCount;
+        ranges.push_back(range);
+    }
+    
+    // Merge adjacent ranges for efficiency
+    if (ranges.empty()) return ranges;
+    
+    std::vector<ClusterRange> merged;
+    merged.reserve(ranges.size());
+    
+    ClusterRange current = ranges[0];
+    
+    for (size_t i = 1; i < ranges.size(); i++) {
+        if (current.start + current.count == ranges[i].start) {
+            current.count += ranges[i].count;   // Merge adjacent runs
+        } else {
+            merged.push_back(current);
+            current = ranges[i];
+        }
+    }
+    merged.push_back(current);
+    
+    return merged;
+}
+
+// NEW: Parse MFT record into FragmentedFile structure
+std::optional<FragmentedFile> NTFSScanner::ParseMFTRecordToFragmentedFile(
+    const std::vector<uint8_t>& data,
+    uint64_t /*recordNum*/,
+    const NTFSBootSector& boot)
+{
+    if (data.size() < sizeof(MFTFileRecord)) {
+        return std::nullopt;
+    }
+    
+    const MFTFileRecord* record = reinterpret_cast<const MFTFileRecord*>(data.data());
+    
+    // Verify FILE signature
+    if (std::memcmp(record->signature, "FILE", 4) != 0) {
+        return std::nullopt;
+    }
+    
+    uint64_t bytesPerCluster = boot.bytesPerSector * boot.sectorsPerCluster;
+    FragmentedFile file(0, bytesPerCluster);
+    
+    size_t offset = record->firstAttributeOffset;
+    
+    while (offset + sizeof(AttributeHeader) <= data.size()) {
+        const AttributeHeader* attr = reinterpret_cast<const AttributeHeader*>(data.data() + offset);
+        
+        if (attr->type == 0xFFFFFFFF) break;
+        if (attr->length == 0 || offset > data.size() - attr->length) break;
+        
+        // Process $DATA attribute (0x80)
+        if (attr->type == 0x80) {
+            if (attr->nonResident == 0) {
+                // Resident data
+                const ResidentAttributeHeader* resAttr = 
+                    reinterpret_cast<const ResidentAttributeHeader*>(data.data() + offset);
+                
+                if (resAttr->valueLength <= data.size() &&
+                    resAttr->valueOffset <= data.size() - resAttr->valueLength &&
+                    offset <= data.size() - resAttr->valueOffset - resAttr->valueLength) {
+                    
+                    std::vector<uint8_t> residentData(resAttr->valueLength);
+                    std::memcpy(residentData.data(), 
+                               data.data() + offset + resAttr->valueOffset,
+                               resAttr->valueLength);
+                    
+                    file.SetResidentData(std::move(residentData));
+                    return file;
+                }
+            } else {
+                // Non-resident data
+                const NonResidentAttributeHeader* nrAttr = 
+                    reinterpret_cast<const NonResidentAttributeHeader*>(data.data() + offset);
+                
+                if (attr->length >= 64 && nrAttr->dataRunOffset <= data.size() &&
+                    offset <= data.size() - nrAttr->dataRunOffset) {
+                    
+                    const uint8_t* runData = data.data() + offset + nrAttr->dataRunOffset;
+                    size_t maxRunSize = data.size() - (offset + nrAttr->dataRunOffset);
+                    
+                    auto parseResult = ParseDataRunsEnhanced(
+                        runData, maxRunSize, bytesPerCluster, m_diskTotalClusters);
+                    
+                    if (parseResult.valid && !parseResult.runs.empty()) {
+                        FragmentMap fragments(bytesPerCluster, m_diskTotalClusters);
+                        for (const auto& run : parseResult.runs) {
+                            fragments.AddRun(run);
+                        }
+                        fragments.SetTotalSize(nrAttr->realSize);
+                        
+                        file.SetFileSize(nrAttr->realSize);
+                        file.SetFragmentMap(std::move(fragments));
+                        return file;
+                    }
+                }
+            }
+        }
+        
+        offset += attr->length;
+    }
+    
+    return std::nullopt;
 }
 
 // Parse MFT record and extract deleted file information.
@@ -108,6 +439,8 @@ bool NTFSScanner::ParseMFTRecord(const std::vector<uint8_t>& data, uint64_t reco
     // Skip active files and directories
     if ((record->flags & FLAG_IN_USE) || (record->flags & FLAG_IS_DIRECTORY)) return false;
 
+    uint64_t bytesPerCluster = boot.bytesPerSector * boot.sectorsPerCluster;
+    
     DeletedFileEntry fileEntry = {};
     fileEntry.fileRecord = recordNum;
     fileEntry.filesystemType = L"NTFS";
@@ -115,7 +448,7 @@ bool NTFSScanner::ParseMFTRecord(const std::vector<uint8_t>& data, uint64_t reco
     fileEntry.size = 0;
     fileEntry.sizeFormatted = L"Unknown";
     fileEntry.isRecoverable = false;
-    fileEntry.clusterSize = boot.bytesPerSector * boot.sectorsPerCluster;
+    fileEntry.clusterSize = bytesPerCluster;
     
     bool hasFileName = false;
     bool hasData = false;
@@ -191,12 +524,31 @@ bool NTFSScanner::ParseMFTRecord(const std::vector<uint8_t>& data, uint64_t reco
                     const uint8_t* runData = data.data() + offset + nrAttr->dataRunOffset;
                     size_t maxRunSize = data.size() - (offset + nrAttr->dataRunOffset);
                     
-                    // Parse data runs to get cluster locations
-                    fileEntry.clusterRanges = ParseDataRuns(runData, maxRunSize, boot.bytesPerSector * boot.sectorsPerCluster);
-                    fileEntry.size = nrAttr->realSize;
-                    fileEntry.sizeFormatted = StringUtils::FormatFileSize(nrAttr->realSize);
-                    fileEntry.isRecoverable = !fileEntry.clusterRanges.empty();
-                    hasData = true;
+                    // Use enhanced parser with validation
+                    auto parseResult = ParseDataRunsEnhanced(
+                        runData, maxRunSize, bytesPerCluster, m_diskTotalClusters);
+                    
+                    if (parseResult.valid && !parseResult.runs.empty()) {
+                        // Convert ClusterRun to ClusterRange for legacy compatibility
+                        for (const auto& run : parseResult.runs) {
+                            ClusterRange range;
+                            range.start = run.startCluster;
+                            range.count = run.clusterCount;
+                            fileEntry.clusterRanges.push_back(range);
+                        }
+                        
+                        fileEntry.size = nrAttr->realSize;
+                        fileEntry.sizeFormatted = StringUtils::FormatFileSize(nrAttr->realSize);
+                        fileEntry.isRecoverable = true;
+                        hasData = true;
+                    } else {
+                        // Fallback to legacy parser
+                        fileEntry.clusterRanges = ParseDataRuns(runData, maxRunSize, bytesPerCluster);
+                        fileEntry.size = nrAttr->realSize;
+                        fileEntry.sizeFormatted = StringUtils::FormatFileSize(nrAttr->realSize);
+                        fileEntry.isRecoverable = !fileEntry.clusterRanges.empty();
+                        hasData = true;
+                    }
                 }
             }
         }
@@ -344,11 +696,15 @@ bool NTFSScanner::ScanVolume(
     NTFSBootSector boot = ReadBootSector(disk);
     if (std::memcmp(boot.oemID, "NTFS    ", 8) != 0) return false;
 
+    // Calculate disk size for validation
+    uint64_t bytesPerCluster = boot.bytesPerSector * boot.sectorsPerCluster;
+    uint64_t diskSize = disk.GetDiskSize();
+    m_diskTotalClusters = diskSize / bytesPerCluster;
+
     uint64_t maxRecords = config.ntfsMftSpareDriveLimit;
     uint64_t recordsScanned = 0;
     uint64_t filesFound = 0;
     
-    uint64_t bytesPerCluster = boot.bytesPerSector * boot.sectorsPerCluster;
     uint64_t mftRecordSize = (boot.clustersPerMFTRecord >= 0) 
         ? boot.clustersPerMFTRecord * bytesPerCluster
         : (1ULL << (-boot.clustersPerMFTRecord));
@@ -382,10 +738,10 @@ bool NTFSScanner::ScanVolume(
             size_t offsetInBuffer = static_cast<size_t>(j * mftRecordSize);
             if (offsetInBuffer + mftRecordSize > batchData.size()) break;
 
-			std::vector<uint8_t> recordData(
-				batchData.begin() + static_cast<size_t>(offsetInBuffer), 
-				batchData.begin() + static_cast<size_t>(offsetInBuffer + mftRecordSize)
-			);
+            std::vector<uint8_t> recordData(
+                batchData.begin() + static_cast<size_t>(offsetInBuffer), 
+                batchData.begin() + static_cast<size_t>(offsetInBuffer + mftRecordSize)
+            );
 
             ApplyFixups(recordData, boot.bytesPerSector);
 
@@ -410,90 +766,6 @@ bool NTFSScanner::ScanVolume(
     onProgress(finalMsg, 0.33f);
 
     return true;
-}
-
-// Parse NTFS data runs to extract cluster locations.
-std::vector<ClusterRange> NTFSScanner::ParseDataRuns(const uint8_t* runData, size_t maxSize, uint64_t bytesPerCluster) {
-    std::vector<ClusterRange> ranges;
-    if (maxSize == 0) return ranges;
-    
-    size_t offset = 0;
-    int64_t currentLCN = 0;
-    const uint64_t maxClustersTotal = (100ULL * Constants::GIGABYTE) / (bytesPerCluster > 0 ? bytesPerCluster : Constants::CLUSTER_SIZE_DEFAULT);
-    
-    uint64_t clustersAccumulated = 0;
-    
-    // Parse run-length encoded cluster locations
-    while (offset < maxSize) {
-        uint8_t header = runData[offset];
-        if (header == 0) break;                 // End of runs marker
-        
-        uint8_t lengthBytes = header & 0x0F;
-        uint8_t offsetBytes = (header >> 4) & 0x0F;
-        
-        if (lengthBytes == 0 || lengthBytes > 8 || offsetBytes > 8) break;
-        
-        offset++;
-        
-        if (offset + lengthBytes + offsetBytes > maxSize) {
-            break;
-        }
-        
-        // Read run length (little-endian)
-        uint64_t runLength = 0;
-        for (uint8_t i = 0; i < lengthBytes; i++) {
-            runLength |= (static_cast<uint64_t>(runData[offset + i]) << (i * 8));
-        }
-        offset += lengthBytes;
-        // Read LCN offset (signed, little-endian)
-        int64_t lcnOffset = 0;
-        for (uint8_t i = 0; i < offsetBytes; i++) {
-            lcnOffset |= (static_cast<int64_t>(runData[offset + i]) << (i * 8));
-        }
-        
-        clustersAccumulated += runLength;
-        
-        // Check limits to prevent excessive fragmentation
-        if (ranges.size() > Constants::NTFS::MAX_FRAGMENTS || clustersAccumulated > maxClustersTotal) {
-            break;
-        }
-        
-        // Sign-extend if negative
-        if (offsetBytes > 0 && (runData[offset + offsetBytes - 1] & 0x80)) {
-            for (uint8_t i = offsetBytes; i < 8; i++) {
-                lcnOffset |= (static_cast<int64_t>(0xFF) << (i * 8));
-            }
-        }
-        
-        offset += offsetBytes;
-        currentLCN += lcnOffset;
-        
-        if (offsetBytes > 0 && currentLCN > 0) {
-            ClusterRange range;
-            range.start = static_cast<uint64_t>(currentLCN);
-            range.count = runLength;
-            ranges.push_back(range);
-        }
-    }
-    // Merge adjacent ranges for efficiency
-    if (ranges.empty()) return ranges;
-    
-    std::vector<ClusterRange> merged;
-    merged.reserve(ranges.size());
-    
-    ClusterRange current = ranges[0];
-    
-    for (size_t i = 1; i < ranges.size(); i++) {
-        if (current.start + current.count == ranges[i].start) {
-            current.count += ranges[i].count;   // Merge adjacent runs
-        } else {
-            merged.push_back(current);
-            current = ranges[i];
-        }
-    }
-    merged.push_back(current);
-    
-    return merged;
 }
 
 } // namespace KVC

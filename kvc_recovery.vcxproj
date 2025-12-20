@@ -63,19 +63,39 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><RuntimeLibrary>MultiThreaded</RuntimeLibrary></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release_MinSize'"><ClCompile><RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary></ClCompile></ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="src\DiskForensicsCore.cpp" /><ClCompile Include="src\FileCarver.cpp" /><ClCompile Include="src\ExFATScanner.cpp" />
-    <ClCompile Include="src\FileSignatures.cpp" /><ClCompile Include="src\NTFSScanner.cpp" /><ClCompile Include="src\FAT32Scanner.cpp" />
-    <ClCompile Include="src\RecoveryApplication.cpp" /><ClCompile Include="src\RecoveryEngine.cpp" /><ClCompile Include="src\UsnJournalScanner.cpp" />
-    <ClCompile Include="src\main.cpp" /><ClCompile Include="src\main_cli.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\main_cli.h" />
-    <ClInclude Include="src\Constants.h" /><ClInclude Include="src\StringUtils.h" /><ClInclude Include="src\DiskForensicsCore.h" />
-    <ClInclude Include="src\FileCarver.h" /><ClInclude Include="src\ExFATScanner.h" /><ClInclude Include="src\FileSignatures.h" />
-    <ClInclude Include="src\NTFSScanner.h" /><ClInclude Include="src\FAT32Scanner.h" /><ClInclude Include="src\RecoveryApplication.h" />
-    <ClInclude Include="src\RecoveryEngine.h" /><ClInclude Include="src\UsnJournalScanner.h" /><ClInclude Include="src\resource.h" />
-  </ItemGroup>
+<ItemGroup>
+  <ClCompile Include="src\DiskForensicsCore.cpp" />
+  <ClCompile Include="src\FileCarver.cpp" />
+  <ClCompile Include="src\ExFATScanner.cpp" />
+  <ClCompile Include="src\FileSignatures.cpp" />
+  <ClCompile Include="src\NTFSScanner.cpp" />
+  <ClCompile Include="src\FAT32Scanner.cpp" />
+  <ClCompile Include="src\RecoveryApplication.cpp" />
+  <ClCompile Include="src\RecoveryEngine.cpp" />
+  <ClCompile Include="src\UsnJournalScanner.cpp" />
+  <ClCompile Include="src\FragmentedRecoveryEngine.cpp" />
+  <ClCompile Include="src\main.cpp" />
+  <ClCompile Include="src\main_cli.cpp" />
+</ItemGroup>
+
+<ItemGroup>
+  <ClInclude Include="src\main_cli.h" />
+  <ClInclude Include="src\Constants.h" />
+  <ClInclude Include="src\StringUtils.h" />
+  <ClInclude Include="src\DiskForensicsCore.h" />
+  <ClInclude Include="src\FileCarver.h" />
+  <ClInclude Include="src\ExFATScanner.h" />
+  <ClInclude Include="src\FileSignatures.h" />
+  <ClInclude Include="src\NTFSScanner.h" />
+  <ClInclude Include="src\FAT32Scanner.h" />
+  <ClInclude Include="src\RecoveryApplication.h" />
+  <ClInclude Include="src\RecoveryEngine.h" />
+  <ClInclude Include="src\FragmentedRecoveryEngine.h" />
+  <ClInclude Include="src\ForensicsExceptions.h" />
+  <ClInclude Include="src\FragmentedFile.h" />
+  <ClInclude Include="src\UsnJournalScanner.h" />
+  <ClInclude Include="src\resource.h" />
+</ItemGroup>
   <ItemGroup><ResourceCompile Include="src\kvc_recovery.rc" /></ItemGroup>
   <ItemGroup><Image Include="src\icon.ico" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

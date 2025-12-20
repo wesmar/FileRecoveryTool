@@ -3,11 +3,13 @@
 // ============================================================================
 // Implements signature-based file recovery (carving) from raw disk sectors.
 // Detects file types by magic numbers and reconstructs files without metadata.
+// Supports fragmented file reading through FragmentMap abstraction.
 // ============================================================================
 #pragma once
 
 #include "DiskForensicsCore.h"
 #include "FileSignatures.h"
+#include "FragmentedFile.h"
 #include "Constants.h"
 #include <vector>
 #include <optional>
@@ -17,13 +19,24 @@
 namespace KVC {
 
 // ============================================================================
-// SequentialReader - Stream-based disk reader (Digler-style)
+// SequentialReader - Fragment-aware stream-based disk reader
 // ============================================================================
 // Wraps DiskHandle to provide sequential byte-by-byte reading for format parsers.
-// This eliminates the need to pre-determine file sizes from corrupted headers.
+// Transparently handles fragmented files - presents a continuous stream regardless
+// of physical fragmentation on disk.
+//
+// Two modes of operation:
+// 1. Linear mode: Simple start offset + max size (legacy, for contiguous files)
+// 2. Fragment mode: Uses FragmentMap for non-contiguous files
+
 class SequentialReader {
 public:
+    // Linear mode constructor (for contiguous files or simple scanning)
     SequentialReader(DiskHandle& disk, uint64_t startOffset, uint64_t maxSize, uint64_t sectorSize);
+    
+    // Fragment mode constructor (for fragmented files)
+    SequentialReader(DiskHandle& disk, const FragmentMap& fragments, uint64_t sectorSize);
+    SequentialReader(DiskHandle& disk, FragmentMap&& fragments, uint64_t sectorSize);
     
     // Read single byte (returns false on EOF/error)
     bool ReadByte(uint8_t& byte);
@@ -31,30 +44,63 @@ public:
     // Read multiple bytes (returns bytes actually read)
     size_t Read(uint8_t* buffer, size_t count);
     
+    // Peek at next byte without consuming it
+    bool Peek(uint8_t& byte);
+    
     // Skip bytes without reading
     bool Skip(uint64_t count);
+    
+    // Seek to absolute position (within file)
+    bool Seek(uint64_t position);
     
     // Get current position relative to start
     uint64_t Position() const { return m_position; }
     
     // Check if we hit EOF
     bool AtEOF() const { return m_position >= m_maxSize; }
+    
+    // Get total readable size
+    uint64_t TotalSize() const { return m_maxSize; }
+    
+    // Get remaining bytes
+    uint64_t Remaining() const { 
+        return m_position < m_maxSize ? m_maxSize - m_position : 0; 
+    }
+    
+    // Check if operating in fragment mode
+    bool IsFragmented() const { return m_fragmentMode; }
+    
+    // Get fragment map (only valid in fragment mode)
+    const FragmentMap& Fragments() const { return m_fragments; }
 
 private:
     void FillBuffer();
+    void FillBufferLinear();
+    void FillBufferFragmented();
+    
+    // Translate current file position to disk offset (for fragmented mode)
+    std::optional<uint64_t> TranslatePositionToDisk() const;
     
     DiskHandle& m_disk;
-    uint64_t m_startOffset;     // Starting offset on disk
+    uint64_t m_startOffset;      // Starting offset on disk (linear mode only)
     uint64_t m_maxSize;          // Maximum bytes to read
     uint64_t m_position;         // Current position (relative to start)
     uint64_t m_sectorSize;
     
-    std::vector<uint8_t> m_buffer;  // Internal read buffer (64KB)
+    bool m_fragmentMode;         // True if using FragmentMap
+    FragmentMap m_fragments;     // Fragment map (fragment mode)
+    
+    std::vector<uint8_t> m_buffer;  // Internal read buffer
     size_t m_bufferPos;             // Position in buffer
     size_t m_bufferValid;           // Valid bytes in buffer
+    uint64_t m_bufferFileOffset;    // File offset corresponding to buffer start
     
     static constexpr size_t BUFFER_SIZE = 65536; // 64KB buffer
 };
+
+// ============================================================================
+// FileCarver - Main carving engine
+// ============================================================================
 
 class FileCarver {
 public:
@@ -77,6 +123,7 @@ public:
         FileSignature signature;
         uint64_t startCluster;
         uint64_t fileSize;
+        FragmentMap fragments;      // NEW: Fragment information
     };
     
     std::vector<CarvedFile> ScanRegionMemoryMapped(
@@ -147,7 +194,7 @@ public:
         bool useNTFSAddressing = false
     );
 
-    // Parse file size from header
+    // Parse file size from header (linear mode)
     std::optional<uint64_t> ParseFileSize(
         DiskHandle& disk,
         uint64_t cluster,
@@ -165,14 +212,24 @@ public:
         const FileSignature& signature
     );
     
-    // NEW: Sequential parsing - reads until file end marker (Digler-style)
+    // Sequential parsing - reads until file end marker (Digler-style)
+    // Works with both linear and fragmented SequentialReader
     std::optional<uint64_t> ParseFileEnd(
         SequentialReader& reader,
+        const FileSignature& signature
+    );
+    
+    // NEW: Parse file end using fragment map
+    std::optional<uint64_t> ParseFileEndFragmented(
+        DiskHandle& disk,
+        const FragmentMap& fragments,
+        uint64_t sectorSize,
         const FileSignature& signature
     );
 
 private:
     // Sequential format parsers (Digler-style) - read byte-by-byte to find end
+    // These are UNCHANGED - they work on the abstract SequentialReader stream
     static std::optional<uint64_t> ParseJpegEnd(SequentialReader& reader);
     static std::optional<uint64_t> ParsePngEnd(SequentialReader& reader);
     static std::optional<uint64_t> ParsePdfEnd(SequentialReader& reader);
@@ -181,7 +238,7 @@ private:
     static std::optional<uint64_t> ParseGifEnd(SequentialReader& reader);
     static std::optional<uint64_t> ParseBmpEnd(SequentialReader& reader);
     
-    // File format parsers (OLD - header-based, kept for compatibility)
+    // File format parsers (header-based, kept for compatibility)
     static std::optional<uint64_t> ParsePngSize(const std::vector<uint8_t>& data);
     static std::optional<uint64_t> ParseJpegSize(const std::vector<uint8_t>& data);
     static std::optional<uint64_t> ParseGifSize(const std::vector<uint8_t>& data);

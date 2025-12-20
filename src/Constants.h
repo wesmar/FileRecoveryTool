@@ -49,6 +49,10 @@ namespace NTFS {
     constexpr uint64_t MAX_CLUSTER_CHAIN_READ = 100000;
     constexpr uint64_t PATH_CACHE_DEPTH_LIMIT = 50;
     constexpr uint64_t PATH_CACHE_SIZE_LIMIT = 100;
+    
+    // Data run parsing limits
+    constexpr size_t MAX_DATA_RUN_SIZE = 8;          // Max bytes per length/offset field
+    constexpr size_t MAX_DATA_RUNS_PER_ATTRIBUTE = 65536;
 }
 
 // ============================================================================
@@ -75,6 +79,17 @@ namespace Carving {
     constexpr uint64_t MAX_SAFE_SKIP = 64 * MEGABYTE;
     constexpr uint64_t MAX_REASONABLE_GAP = 50;
     constexpr uint64_t SIZE_PARSE_TOLERANCE = 10;
+}
+
+// ============================================================================
+// Fragmentation Support
+// ============================================================================
+namespace Fragmentation {
+    constexpr size_t SEQUENTIAL_READER_BUFFER_SIZE = 65536;  // 64KB read buffer
+    constexpr size_t MAX_FRAGMENTS_PER_FILE = 1000000;       // Safety limit
+    constexpr size_t PARALLEL_VALIDATION_THRESHOLD = 10;     // Min fragments for parallel validation
+    constexpr size_t DEFAULT_PARALLEL_THREADS = 4;
+    constexpr uint64_t MAX_CONTIGUOUS_READ = 16 * MEGABYTE;  // Max single contiguous read
 }
 
 // ============================================================================

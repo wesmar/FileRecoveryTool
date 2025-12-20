@@ -1,18 +1,22 @@
-﻿// ============================================================================
+// ============================================================================
 // NTFSScanner.h - NTFS Filesystem Scanner
 // ============================================================================
 // Implements NTFS-specific scanning by parsing the Master File Table (MFT).
 // Identifies deleted files by examining MFT records with FILE_NAME and DATA
 // attributes. Handles both resident (small) and non-resident (large) files.
+// Enhanced with robust NTFS data run parsing and validation.
 // ============================================================================
 
 #pragma once
 
 #include "DiskForensicsCore.h"
+#include "FragmentedFile.h"
+#include "ForensicsExceptions.h"
 #include "Constants.h"
 #include "StringUtils.h"
 #include <map>
 #include <vector>
+#include <optional>
 
 namespace KVC {
 
@@ -114,6 +118,50 @@ struct FileNameAttribute {
 };
 #pragma pack(pop)
 
+// ============================================================================
+// NTFSDataRunParser - Robust NTFS data run decoding
+// ============================================================================
+
+class NTFSDataRunParser {
+public:
+    struct ParseResult {
+        std::vector<ClusterRun> runs;
+        uint64_t totalClusters;
+        uint64_t totalBytes;
+        bool valid;
+        std::string errorMessage;
+        
+        ParseResult() : totalClusters(0), totalBytes(0), valid(false) {}
+    };
+    
+    // Parse data runs from raw attribute data
+    // Returns ClusterRun vector with proper file offsets
+    static ParseResult Parse(
+        const uint8_t* runData,
+        size_t maxSize,
+        uint64_t bytesPerCluster,
+        uint64_t maxClusterNumber = 0  // 0 = no validation
+    );
+    
+    // Validate a set of runs against disk geometry
+    static bool ValidateRuns(
+        const std::vector<ClusterRun>& runs,
+        uint64_t maxClusterNumber,
+        std::string* errorOut = nullptr
+    );
+
+private:
+    // Read variable-length integer from data run encoding
+    static uint64_t ReadVarInt(const uint8_t* data, uint8_t numBytes);
+    
+    // Read signed variable-length integer (for LCN offsets)
+    static int64_t ReadSignedVarInt(const uint8_t* data, uint8_t numBytes);
+};
+
+// ============================================================================
+// NTFSScanner
+// ============================================================================
+
 class NTFSScanner {
 public:
     NTFSScanner();
@@ -134,14 +182,32 @@ public:
     bool ParseMFTRecord(const std::vector<uint8_t>& data, uint64_t recordNum,
         DiskForensicsCore::FileFoundCallback& callback, DiskHandle& disk, const NTFSBootSector& boot,
         const std::wstring& folderFilter, const std::wstring& filenameFilter);
+    
+    // NEW: Parse MFT record into FragmentedFile structure
+    std::optional<FragmentedFile> ParseMFTRecordToFragmentedFile(
+        const std::vector<uint8_t>& data,
+        uint64_t recordNum,
+        const NTFSBootSector& boot
+    );
 
 private:
+    // Legacy interface for compatibility
     std::vector<ClusterRange> ParseDataRuns(const uint8_t* runData, size_t maxSize, uint64_t bytesPerCluster = 4096);
+    
+    // NEW: Enhanced data run parsing with validation
+    NTFSDataRunParser::ParseResult ParseDataRunsEnhanced(
+        const uint8_t* runData,
+        size_t maxSize,
+        uint64_t bytesPerCluster,
+        uint64_t maxCluster
+    );
+    
     std::wstring ReconstructPath(DiskHandle& disk, const NTFSBootSector& boot, 
                               uint64_t mftRecord, const std::wstring& filename);
     bool ApplyFixups(std::vector<uint8_t>& recordData, uint16_t bytesPerSector);
 
     std::map<uint64_t, std::wstring> m_pathCache;
+    uint64_t m_diskTotalClusters;  // For validation
 };
 
 } // namespace KVC
