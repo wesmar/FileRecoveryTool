@@ -16,6 +16,46 @@
 
 namespace KVC {
 
+// ============================================================================
+// SequentialReader - Stream-based disk reader (Digler-style)
+// ============================================================================
+// Wraps DiskHandle to provide sequential byte-by-byte reading for format parsers.
+// This eliminates the need to pre-determine file sizes from corrupted headers.
+class SequentialReader {
+public:
+    SequentialReader(DiskHandle& disk, uint64_t startOffset, uint64_t maxSize, uint64_t sectorSize);
+    
+    // Read single byte (returns false on EOF/error)
+    bool ReadByte(uint8_t& byte);
+    
+    // Read multiple bytes (returns bytes actually read)
+    size_t Read(uint8_t* buffer, size_t count);
+    
+    // Skip bytes without reading
+    bool Skip(uint64_t count);
+    
+    // Get current position relative to start
+    uint64_t Position() const { return m_position; }
+    
+    // Check if we hit EOF
+    bool AtEOF() const { return m_position >= m_maxSize; }
+
+private:
+    void FillBuffer();
+    
+    DiskHandle& m_disk;
+    uint64_t m_startOffset;     // Starting offset on disk
+    uint64_t m_maxSize;          // Maximum bytes to read
+    uint64_t m_position;         // Current position (relative to start)
+    uint64_t m_sectorSize;
+    
+    std::vector<uint8_t> m_buffer;  // Internal read buffer (64KB)
+    size_t m_bufferPos;             // Position in buffer
+    size_t m_bufferValid;           // Valid bytes in buffer
+    
+    static constexpr size_t BUFFER_SIZE = 65536; // 64KB buffer
+};
+
 class FileCarver {
 public:
     FileCarver();
@@ -28,7 +68,8 @@ public:
         uint64_t sectorsPerCluster,
         uint64_t clusterHeapOffset,
         uint64_t sectorSize,
-        const std::vector<FileSignature>& signatures
+        const std::vector<FileSignature>& signatures,
+        bool useNTFSAddressing = false
     );
 
     // Optimized method - batch scan using memory-mapped I/O
@@ -46,7 +87,8 @@ public:
         uint64_t clusterHeapOffset,
         uint64_t sectorSize,
         const std::vector<FileSignature>& signatures,
-        uint64_t maxFiles
+        uint64_t maxFiles,
+        bool useNTFSAddressing = false
     );
 
     // Diagnostic structures for measuring carving effectiveness
@@ -101,7 +143,8 @@ public:
         uint64_t clusterHeapOffset,
         uint64_t sectorSize,
         const std::vector<FileSignature>& signatures,
-        uint64_t maxFiles
+        uint64_t maxFiles,
+        bool useNTFSAddressing = false
     );
 
     // Parse file size from header
@@ -111,7 +154,8 @@ public:
         uint64_t sectorsPerCluster,
         uint64_t clusterHeapOffset,
         uint64_t sectorSize,
-        const FileSignature& signature
+        const FileSignature& signature,
+        bool useNTFSAddressing = false
     );
     
     // Parse file size from memory buffer
@@ -120,9 +164,24 @@ public:
         size_t dataSize,
         const FileSignature& signature
     );
+    
+    // NEW: Sequential parsing - reads until file end marker (Digler-style)
+    std::optional<uint64_t> ParseFileEnd(
+        SequentialReader& reader,
+        const FileSignature& signature
+    );
 
 private:
-    // File format parsers
+    // Sequential format parsers (Digler-style) - read byte-by-byte to find end
+    static std::optional<uint64_t> ParseJpegEnd(SequentialReader& reader);
+    static std::optional<uint64_t> ParsePngEnd(SequentialReader& reader);
+    static std::optional<uint64_t> ParsePdfEnd(SequentialReader& reader);
+    static std::optional<uint64_t> ParseZipEnd(SequentialReader& reader);
+    static std::optional<uint64_t> ParseMp4End(SequentialReader& reader);
+    static std::optional<uint64_t> ParseGifEnd(SequentialReader& reader);
+    static std::optional<uint64_t> ParseBmpEnd(SequentialReader& reader);
+    
+    // File format parsers (OLD - header-based, kept for compatibility)
     static std::optional<uint64_t> ParsePngSize(const std::vector<uint8_t>& data);
     static std::optional<uint64_t> ParseJpegSize(const std::vector<uint8_t>& data);
     static std::optional<uint64_t> ParseGifSize(const std::vector<uint8_t>& data);

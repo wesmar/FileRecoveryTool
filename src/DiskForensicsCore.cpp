@@ -560,6 +560,8 @@ bool DiskForensicsCore::ProcessFileCarving(
             maxClusters = m_config.fileCarvingClusterLimit;
         }
         
+        // NTFS uses absolute LCN (Logical Cluster Numbers) starting from 0
+        // No cluster heap offset needed
         uint64_t clusterHeapOffset = 0;
         
         auto signatures = FileSignatures::GetAllSignatures();
@@ -585,13 +587,13 @@ bool DiskForensicsCore::ProcessFileCarving(
             // Scan this cluster for file signatures
             auto signature = m_fileCarver->ScanClusterForSignature(
                 disk, cluster, sectorsPerCluster, clusterHeapOffset, 
-                sectorSize, signatures
+                sectorSize, signatures, true  // useNTFSAddressing
             );
             
             if (signature.has_value()) {
                 auto fileSize = m_fileCarver->ParseFileSize(
                     disk, cluster, sectorsPerCluster, clusterHeapOffset,
-                    sectorSize, signature.value()
+                    sectorSize, signature.value(), true  // useNTFSAddressing
                 );
                 
                 if (fileSize.has_value() && fileSize.value() > 0) {
@@ -662,6 +664,7 @@ bool DiskForensicsCore::ProcessFileCarving(
 }
 
 // Optimized file carving using memory-mapped I/O for batch processing.
+// Sequential file carving using Digler-style approach (SIMPLIFIED)
 bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
     DiskHandle& disk,
     FileFoundCallback onFileFound,
@@ -671,7 +674,6 @@ bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
     try {
         uint64_t sectorSize = disk.GetSectorSize();
         uint64_t diskSize = disk.GetDiskSize();
-        uint64_t totalSectors = diskSize / sectorSize;
         
         auto bootData = disk.ReadSectors(0, 1, sectorSize);
         if (bootData.size() < Constants::SECTOR_SIZE_DEFAULT) {
@@ -680,152 +682,113 @@ bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
         }
         
         uint8_t sectorsPerCluster = bootData[13];
-        if (sectorsPerCluster == 0) sectorsPerCluster = Constants::SECTORS_PER_CLUSTER_DEFAULT; // Default 4KB clusters
+        if (sectorsPerCluster == 0) sectorsPerCluster = Constants::SECTORS_PER_CLUSTER_DEFAULT;
         
         uint64_t bytesPerCluster = sectorsPerCluster * sectorSize;
-        uint64_t totalClusters = totalSectors / sectorsPerCluster;
+        uint64_t totalClusters = diskSize / bytesPerCluster;
         
-        // Apply limit only if set, otherwise scan the entire disk
+        // Apply cluster limit if set
         uint64_t maxClusters = totalClusters;
         if (m_config.fileCarvingClusterLimit > 0 && m_config.fileCarvingClusterLimit < totalClusters) {
             maxClusters = m_config.fileCarvingClusterLimit;
-            wchar_t limitMsg[256];
-            swprintf_s(limitMsg, L"File carving limited to %llu clusters (%.2f GB)", 
-                      maxClusters, (maxClusters * bytesPerCluster) / 1000000000.0);
-            onProgress(limitMsg, 0.66f);
-        } else {
-            wchar_t fullMsg[256];
-            swprintf_s(fullMsg, L"File carving scanning FULL DISK: %llu clusters (%.2f GB)", 
-                      totalClusters, (totalClusters * bytesPerCluster) / 1000000000.0);
-            onProgress(fullMsg, 0.66f);
         }
-        
-        uint64_t clusterHeapOffset = 0;
         
         auto signatures = FileSignatures::GetAllSignatures();
         uint64_t filesFound = 0;
         
-        // Accumulate diagnostics across all batches
-        FileCarver::CarvingDiagnostics totalStats;
+        wchar_t startMsg[256];
+        swprintf_s(startMsg, L"File carving (sequential): Scanning %llu clusters (%.2f GB)...", 
+                  maxClusters, (maxClusters * bytesPerCluster) / 1000000000.0);
+        onProgress(startMsg, 0.66f);
         
-        // Process disk in large batches using memory-mapped I/O
-        // Batch size depends on available memory - 256MB is safe on most systems
-        uint64_t clustersProcessed = 0;
-        
-        for (uint64_t batchStart = 2; batchStart < maxClusters && filesFound < m_config.fileCarvingMaxFiles; ) {
-            if (shouldStop) {
+        // Scan cluster by cluster for signatures
+        for (uint64_t cluster = 2; cluster < maxClusters && filesFound < m_config.fileCarvingMaxFiles; cluster++) {
+            
+            if ((cluster % Constants::Progress::USN_JOURNAL_INTERVAL) == 0 && shouldStop) {
                 wchar_t stopMsg[256];
                 swprintf_s(stopMsg, L"File carving stopped: %llu files found", filesFound);
                 onProgress(stopMsg, 1.0f);
                 return filesFound > 0;
             }
             
-            uint64_t clustersInBatch = std::min(Constants::CLUSTERS_PER_BATCH, maxClusters - batchStart);
+            // Read first sector of cluster to check for signature
+            uint64_t sector = cluster * sectorsPerCluster;
+            auto clusterHeader = disk.ReadSectors(sector, 1, sectorSize);
+            if (clusterHeader.empty()) continue;
             
-            // Scan batch using memory-mapped I/O with diagnostics
-            auto diagnosticResult = m_fileCarver->ScanRegionWithDiagnostics(
-                disk,
-                batchStart,
-                clustersInBatch,
-                sectorsPerCluster,
-                clusterHeapOffset,
-                sectorSize,
-                signatures,
-                m_config.fileCarvingMaxFiles - filesFound
-            );
-            
-            // Accumulate statistics across batches
-            totalStats.Merge(diagnosticResult.stats);
-            
-            // Report found files
-            for (const auto& carved : diagnosticResult.files) {
-                DeletedFileEntry entry;
-                entry.name = std::to_wstring(filesFound + 1) + L"." + 
-                            std::wstring(carved.signature.extension, 
-                                       carved.signature.extension + strlen(carved.signature.extension));
-                entry.path = L"<carved from free space>";
-                entry.size = carved.fileSize;
-                entry.sizeFormatted = StringUtils::FormatFileSize(carved.fileSize);
-                entry.filesystemType = L"NTFS";
-                entry.hasDeletedTime = false;
-                entry.isRecoverable = true;
-                entry.clusterSize = bytesPerCluster;
-                // Build cluster list
-            uint64_t clustersNeeded = (carved.fileSize + bytesPerCluster - 1) / bytesPerCluster;
-            for (uint64_t i = 0; i < clustersNeeded; i++) {
-                entry.clusters.push_back(carved.startCluster + i);
+            // Check all signatures
+            for (const auto& sig : signatures) {
+                if (clusterHeader.size() < sig.signatureSize) continue;
+                
+                if (std::memcmp(clusterHeader.data(), sig.signature, sig.signatureSize) == 0) {
+                    // Found signature! Use sequential reader to find file end
+                    uint64_t diskOffset = sector * sectorSize;
+                    uint64_t maxScanSize = std::min(
+                        2ULL * 1024 * 1024 * 1024,  // 2GB max per file
+                        diskSize - diskOffset
+                    );
+                    
+                    SequentialReader reader(disk, diskOffset, maxScanSize, sectorSize);
+                    auto fileSize = m_fileCarver->ParseFileEnd(reader, sig);
+                    
+                    if (fileSize.has_value() && fileSize.value() > 0) {
+                        DeletedFileEntry carvedFile;
+                        carvedFile.name = std::to_wstring(filesFound + 1) + L"." + 
+                                         std::wstring(sig.extension, sig.extension + strlen(sig.extension));
+                        carvedFile.path = L"<carved from free space>";
+                        carvedFile.size = fileSize.value();
+                        carvedFile.sizeFormatted = StringUtils::FormatFileSize(fileSize.value());
+                        carvedFile.filesystemType = L"NTFS";
+                        carvedFile.hasDeletedTime = false;
+                        carvedFile.isRecoverable = true;
+                        carvedFile.clusterSize = bytesPerCluster;
+                        
+                        // Build cluster list
+                        uint64_t clustersNeeded = (fileSize.value() + bytesPerCluster - 1) / bytesPerCluster;
+                        for (uint64_t i = 0; i < clustersNeeded; i++) {
+                            carvedFile.clusters.push_back(cluster + i);
+                        }
+                        
+                        onFileFound(carvedFile);
+                        filesFound++;
+                        
+                        // Skip clusters occupied by this file
+                        cluster += std::max<uint64_t>(1, clustersNeeded - 1);
+                    }
+                    
+                    break; // Found signature, no need to check others
+                }
             }
             
-            onFileFound(entry);
-            filesFound++;
+            // Update progress every 10,000 clusters
+            if ((cluster % Constants::Progress::CARVING_INTERVAL) == 0) {
+                float progress = 0.66f + (0.34f * (static_cast<float>(cluster) / maxClusters));
+                float percentDone = (static_cast<float>(cluster) / maxClusters) * 100.0f;
+                float gbProcessed = (cluster * bytesPerCluster) / 1000000000.0f;
+                float gbTotal = (maxClusters * bytesPerCluster) / 1000000000.0f;
+                
+                wchar_t statusMsg[256];
+                swprintf_s(statusMsg, L"File carving: %.1f%% (%.2f / %.2f GB) - %llu files found", 
+                          percentDone, gbProcessed, gbTotal, filesFound);
+                onProgress(statusMsg, progress);
+            }
         }
         
-        clustersProcessed += clustersInBatch;
+        wchar_t completeMsg[256];
+        float percentScanned = (static_cast<float>(maxClusters) / totalClusters) * 100.0f;
+        swprintf_s(completeMsg, L"File carving complete: %llu files found (%.1f%% of disk scanned)", 
+                   filesFound, percentScanned);
+        onProgress(completeMsg, 1.0f);
         
-        // Update progress more frequently for better user experience
-        uint64_t progressInterval = std::max<uint64_t>(Constants::Progress::CARVING_BATCH_INTERVAL, maxClusters / 100);
-        if ((batchStart % progressInterval) == 0 || batchStart + clustersInBatch >= maxClusters) {
-            float progress = 0.66f + (0.34f * (static_cast<float>(batchStart) / maxClusters));
-            wchar_t statusMsg[256];
-            
-            // Show percentage and estimated time
-            float percentDone = (static_cast<float>(batchStart) / maxClusters) * 100.0f;
-            float gbProcessed = (batchStart * bytesPerCluster) / 1000000000.0f;
-            float gbTotal = (maxClusters * bytesPerCluster) / 1000000000.0f;
-            
-            swprintf_s(statusMsg, L"File carving: %.1f%% (%.2f / %.2f GB) - %llu files found", 
-                      percentDone, gbProcessed, gbTotal, filesFound);
-            onProgress(statusMsg, progress);
-        }
-        
-        // Move to next batch
-        batchStart += clustersInBatch;
-        
-        if (filesFound >= m_config.fileCarvingMaxFiles) {
-            wchar_t limitMsg[256];
-            swprintf_s(limitMsg, L"File carving limit reached: %llu files (scanned %.1f%% of disk)", 
-                      filesFound, (static_cast<float>(batchStart) / maxClusters) * 100.0f);
-            onProgress(limitMsg, 1.0f);
-            break;
-        }
+        return filesFound > 0;
     }
-    
-    // Report fragmentation diagnostics
-    if (totalStats.totalSignaturesFound > 0) {
-        wchar_t diagMsg[512];
-        float knownSizePct = (100.0f * totalStats.filesWithKnownSize) / totalStats.totalSignaturesFound;
-        float fragmentedPct = totalStats.filesWithKnownSize > 0 
-            ? (100.0f * totalStats.potentiallyFragmented) / totalStats.filesWithKnownSize 
-            : 0.0f;
-        
-        swprintf_s(diagMsg, 
-            L"[DIAGNOSTICS] Signatures: %llu | Known size: %llu (%.1f%%) | Validated: %llu | "
-            L"Fragmented: %llu (%.1f%%) | Severe: %llu",
-            totalStats.totalSignaturesFound,
-            totalStats.filesWithKnownSize,
-            knownSizePct,
-            totalStats.filesWithValidatedSize,
-            totalStats.potentiallyFragmented,
-            fragmentedPct,
-            totalStats.severelyFragmented
-        );
-        onProgress(diagMsg, 0.99f);
-    }
-    
-    wchar_t completeMsg[256];
-    float percentScanned = (static_cast<float>(clustersProcessed) / totalClusters) * 100.0f;
-    swprintf_s(completeMsg, L"File carving complete: %llu files found (%.1f%% of disk scanned)", 
-               filesFound, percentScanned);
-    onProgress(completeMsg, 1.0f);
-    
-    return filesFound > 0;
-}
-catch (const std::exception& e) {
-    (void)e;
-    onProgress(L"File carving failed", 0.99f);
+    catch (const std::exception& e) {
+        (void)e;
+        onProgress(L"File carving failed", 0.99f);
         return false;
     }
 }
+
 
 std::wstring FormatFileSize(uint64_t bytes) {
     return StringUtils::FormatFileSize(bytes);

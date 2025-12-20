@@ -70,8 +70,8 @@ namespace FAT32 {
 // File Carving Constants
 // ============================================================================
 namespace Carving {
-    constexpr uint64_t HEADER_READ_CLUSTERS = 64;
-    constexpr uint64_t HEADER_READ_SIZE = 256 * KILOBYTE;
+    constexpr uint64_t HEADER_READ_CLUSTERS = 256;  // Increased from 64 for large files
+    constexpr uint64_t HEADER_READ_SIZE = 1 * MEGABYTE;  // Increased from 256KB for modern media
     constexpr uint64_t MAX_SAFE_SKIP = 64 * MEGABYTE;
     constexpr uint64_t MAX_REASONABLE_GAP = 50;
     constexpr uint64_t SIZE_PARSE_TOLERANCE = 10;

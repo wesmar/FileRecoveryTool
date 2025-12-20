@@ -296,7 +296,7 @@ int RecoverFiles(const CLIConfig& config, const std::vector<DeletedFileEntry>& f
     if (files.empty()) {
         wprintf(L"[INFO] No files to recover\n");
         fflush(stdout);
-        ExitProcess(1);
+        return 1;
     }
     
     wprintf(L"[INFO] Recovering %zu files to: %s\n", files.size(), config.outputFolder.c_str());
@@ -307,7 +307,7 @@ int RecoverFiles(const CLIConfig& config, const std::vector<DeletedFileEntry>& f
     if (!engine.ValidateDestination(config.driveLetter, config.outputFolder)) {
         wprintf(L"[ERROR] Cannot recover to source drive - choose different destination\n");
         fflush(stdout);
-        ExitProcess(4);
+        return 4;
     }
     
     auto startTime = std::chrono::steady_clock::now();
@@ -332,11 +332,11 @@ int RecoverFiles(const CLIConfig& config, const std::vector<DeletedFileEntry>& f
     if (success) {
         wprintf(L"[SUCCESS] Recovery completed in %lld seconds\n", duration.count());
         fflush(stdout);
-        ExitProcess(0);
+        return 0;
     } else {
         wprintf(L"[ERROR] Recovery failed\n");
         fflush(stdout);
-        ExitProcess(4);
+        return 4;
     }
 }
 
@@ -359,17 +359,17 @@ int RunCLI(int argc, LPWSTR* argv) {
         if (config.showHelp) {
             PrintHelp();
             fflush(stdout);
-            ExitProcess(0);
+            return 0;
         }
         wprintf(L"[ERROR] Invalid arguments. Use --help for usage information.\n");
         fflush(stdout);
-        ExitProcess(2);
+        return 2;
     }
     
     if (config.showHelp) {
         PrintHelp();
         fflush(stdout);
-        ExitProcess(0);
+        return 0;
     }
     
     // Display scan configuration
@@ -410,7 +410,7 @@ int RunCLI(int argc, LPWSTR* argv) {
     if (fsType == FilesystemType::Unknown) {
         wprintf(L"[ERROR] Unsupported or unreadable filesystem\n");
         fflush(stdout);
-        ExitProcess(3);
+        return 3;
     }
     
     // Clear global state
@@ -456,25 +456,25 @@ int RunCLI(int argc, LPWSTR* argv) {
     if (!config.csvPath.empty()) {
         if (!ExportToCSV(config.csvPath, g_foundFiles)) {
             fflush(stdout);
-            ExitProcess(4);
+            return 4;
         }
     }
     
     // Perform recovery if requested
     if (config.enableRecovery) {
-        RecoverFiles(config, g_foundFiles);
-        // RecoverFiles will call ExitProcess internally
+        int recoveryResult = RecoverFiles(config, g_foundFiles);
+        return recoveryResult;
     }
     
     // Return appropriate exit code
     if (g_foundFiles.empty()) {
         wprintf(L"[INFO] No deleted files found\n");
         fflush(stdout);
-        ExitProcess(1);
+        return 1;
     }
     
     fflush(stdout);
-    ExitProcess(0);
+    return 0;
 }
 
 } // namespace KVC
