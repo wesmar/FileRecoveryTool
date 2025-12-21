@@ -1,4 +1,4 @@
-﻿// FAT32Scanner.cpp
+// FAT32Scanner.cpp
 #include "FAT32Scanner.h"
 #include "Constants.h"
 #include "StringUtils.h"

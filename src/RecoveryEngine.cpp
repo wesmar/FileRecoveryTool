@@ -1,4 +1,4 @@
-﻿// RecoveryEngine.cpp
+// RecoveryEngine.cpp
 #define NOMINMAX
 #include "RecoveryEngine.h"
 #include "StringUtils.h"

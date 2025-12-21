@@ -21,6 +21,8 @@ DiskHandle::DiskHandle(wchar_t driveLetter)
     , m_handle(INVALID_HANDLE_VALUE)
     , m_mappingHandle(nullptr)
     , m_mappedView(nullptr)
+    , m_currentMappedOffset(0)
+    , m_currentMappedSize(0)
 {
 }
 
@@ -63,17 +65,30 @@ void DiskHandle::Close() {
         m_mappedView = nullptr;
     }
     
+    // Reset sliding window state
+    m_currentMappedOffset = 0;
+    m_currentMappedSize = 0;
+    
     // Use RAII through local objects
     closeHandle(m_mappingHandle);
     closeHandle(m_handle);
 }
 
 // Read sequential sectors from disk into memory buffer.
+// Uses chunked reads to handle large requests safely (DWORD limit for ReadFile).
 std::vector<uint8_t> DiskHandle::ReadSectors(uint64_t startSector, uint64_t numSectors, uint64_t sectorSize) {
     if (m_handle == INVALID_HANDLE_VALUE || numSectors == 0) {
         return {};                              // Invalid handle or zero sectors
     }
+    
+    // Overflow check: ensure numSectors * sectorSize doesn't overflow
+    if (numSectors > (UINT64_MAX / sectorSize)) {
+        return {};                              // Would overflow
+    }
 
+    uint64_t totalBytes = numSectors * sectorSize;
+    
+    // Seek to starting position
     LARGE_INTEGER offset;
     offset.QuadPart = static_cast<LONGLONG>(startSector * sectorSize);
 
@@ -81,16 +96,52 @@ std::vector<uint8_t> DiskHandle::ReadSectors(uint64_t startSector, uint64_t numS
         return {};                              // Seek failed
     }
 
-    size_t bufferSize = static_cast<size_t>(numSectors * sectorSize);
-    std::vector<uint8_t> buffer(bufferSize);
-    DWORD bytesRead = 0;
-
-    if (ReadFile(m_handle, buffer.data(), static_cast<DWORD>(bufferSize), &bytesRead, nullptr)) {
-        buffer.resize(bytesRead);               // Trim to actual bytes read
-        return buffer;
+    std::vector<uint8_t> buffer;
+    try {
+        buffer.resize(static_cast<size_t>(totalBytes));
+    } catch (const std::bad_alloc&) {
+        return {};                              // Allocation failed
     }
-
-    return {};                                  // Read failed
+    
+    // Read in chunks to respect DWORD limit and avoid massive single reads
+    uint64_t bytesRemaining = totalBytes;
+    uint64_t bufferOffset = 0;
+    
+    while (bytesRemaining > 0) {
+        // Determine chunk size (limited by MAX_READ_CHUNK and DWORD max)
+        uint64_t chunkSize = std::min(bytesRemaining, Constants::MAX_READ_CHUNK);
+        
+        // Ensure chunk fits in DWORD (should always be true with MAX_READ_CHUNK = 16MB)
+        if (chunkSize > static_cast<uint64_t>(MAXDWORD)) {
+            chunkSize = MAXDWORD;
+        }
+        
+        DWORD bytesRead = 0;
+        BOOL success = ReadFile(
+            m_handle,
+            buffer.data() + bufferOffset,
+            static_cast<DWORD>(chunkSize),
+            &bytesRead,
+            nullptr
+        );
+        
+        if (!success || bytesRead == 0) {
+            // Read failed or EOF - return what we got
+            buffer.resize(static_cast<size_t>(bufferOffset));
+            return buffer;
+        }
+        
+        bufferOffset += bytesRead;
+        bytesRemaining -= bytesRead;
+        
+        // If we got less than requested, we hit EOF
+        if (bytesRead < chunkSize) {
+            buffer.resize(static_cast<size_t>(bufferOffset));
+            return buffer;
+        }
+    }
+    
+    return buffer;
 }
 
 // Query physical sector size from disk geometry.
@@ -139,6 +190,7 @@ uint64_t DiskHandle::GetDiskSize() const {
 }
 
 // Map disk region into process memory for zero-copy access.
+// Uses sliding window strategy to reuse existing mappings when possible.
 DiskHandle::MappedRegion DiskHandle::MapDiskRegion(uint64_t offset, uint64_t size) {
     MappedRegion region;
     
@@ -146,6 +198,19 @@ DiskHandle::MappedRegion DiskHandle::MapDiskRegion(uint64_t offset, uint64_t siz
         return region;                          // Invalid handle
     }
     
+    // Check if request is within current mapped window (sliding window reuse)
+    if (m_mappedView != nullptr && 
+        offset >= m_currentMappedOffset &&
+        offset + size <= m_currentMappedOffset + m_currentMappedSize) {
+        // Request is within existing mapping - return pointer into it
+        uint64_t offsetInMapping = offset - m_currentMappedOffset;
+        region.data = static_cast<const uint8_t*>(m_mappedView) + offsetInMapping;
+        region.size = size;
+        region.diskOffset = offset;
+        return region;
+    }
+    
+    // Need to create new mapping
     // Align offset to allocation granularity (typically 64KB on Windows)
     SYSTEM_INFO sysInfo;
     GetSystemInfo(&sysInfo);
@@ -194,7 +259,7 @@ DiskHandle::MappedRegion DiskHandle::MapDiskRegion(uint64_t offset, uint64_t siz
         return region;                          // View mapping failed
     }
     
-    // Store mapping handle for cleanup
+    // Clean up previous mapping if any
     if (m_mappingHandle != nullptr) {
         CloseHandle(m_mappingHandle);
     }
@@ -204,6 +269,10 @@ DiskHandle::MappedRegion DiskHandle::MapDiskRegion(uint64_t offset, uint64_t siz
     
     m_mappingHandle = hMapping;
     m_mappedView = pView;
+    
+    // Update sliding window state
+    m_currentMappedOffset = alignedOffset;
+    m_currentMappedSize = adjustedSize;
     
     // Set up region info
     region.data = static_cast<const uint8_t*>(pView) + extraBytes;
@@ -530,6 +599,7 @@ bool DiskForensicsCore::ProcessUsnJournal(
         return false;
     }
 }
+
 // Legacy cluster-by-cluster file carving implementation.
 bool DiskForensicsCore::ProcessFileCarving(
     DiskHandle& disk,
@@ -663,8 +733,8 @@ bool DiskForensicsCore::ProcessFileCarving(
     }
 }
 
-// Optimized file carving using memory-mapped I/O for batch processing.
-// Sequential file carving using Digler-style approach (SIMPLIFIED)
+// Optimized file carving using batch memory-mapped I/O.
+// Scans disk in large batches instead of cluster-by-cluster for much better I/O efficiency.
 bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
     DiskHandle& disk,
     FileFoundCallback onFileFound,
@@ -696,82 +766,159 @@ bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
         auto signatures = FileSignatures::GetAllSignatures();
         uint64_t filesFound = 0;
         
+        // Deduplication set to prevent duplicate carved file reports
+        std::unordered_set<uint64_t> seenStartClusters;
+        
         wchar_t startMsg[256];
-        swprintf_s(startMsg, L"File carving (sequential): Scanning %llu clusters (%.2f GB)...", 
+        swprintf_s(startMsg, L"File carving (batch-mapped): Scanning %llu clusters (%.2f GB)...", 
                   maxClusters, (maxClusters * bytesPerCluster) / 1000000000.0);
         onProgress(startMsg, 0.66f);
         
-        // Scan cluster by cluster for signatures
-        for (uint64_t cluster = 2; cluster < maxClusters && filesFound < m_config.fileCarvingMaxFiles; cluster++) {
+        // Process disk in large batches for efficient I/O
+        const uint64_t batchClustersMax = Constants::CARVING_BATCH_CLUSTERS;
+        
+        for (uint64_t batchStart = 2; batchStart < maxClusters && filesFound < m_config.fileCarvingMaxFiles; ) {
             
-            if ((cluster % Constants::Progress::USN_JOURNAL_INTERVAL) == 0 && shouldStop) {
+            // Check stop flag at batch boundary
+            if (shouldStop) {
                 wchar_t stopMsg[256];
                 swprintf_s(stopMsg, L"File carving stopped: %llu files found", filesFound);
                 onProgress(stopMsg, 1.0f);
                 return filesFound > 0;
             }
             
-            // Read first sector of cluster to check for signature
-            uint64_t sector = cluster * sectorsPerCluster;
-            auto clusterHeader = disk.ReadSectors(sector, 1, sectorSize);
-            if (clusterHeader.empty()) continue;
+            // Calculate batch size
+            uint64_t batchClusters = std::min(batchClustersMax, maxClusters - batchStart);
+            uint64_t batchOffsetBytes = batchStart * bytesPerCluster;
+            uint64_t batchSizeBytes = batchClusters * bytesPerCluster;
             
-            // Check all signatures
-            for (const auto& sig : signatures) {
-                if (clusterHeader.size() < sig.signatureSize) continue;
+            // Try to map the batch region
+            const uint8_t* batchData = nullptr;
+            uint64_t batchDataSize = 0;
+            std::vector<uint8_t> fallbackBuffer;
+            bool usedMapping = false;
+            
+            auto region = disk.MapDiskRegion(batchOffsetBytes, batchSizeBytes);
+            if (region.IsValid()) {
+                batchData = region.data;
+                batchDataSize = region.size;
+                usedMapping = true;
+            } else {
+                // Fallback: read the entire batch with ReadSectors (still much better than per-cluster)
+                uint64_t startSector = batchOffsetBytes / sectorSize;
+                uint64_t sectorsToRead = (batchSizeBytes + sectorSize - 1) / sectorSize;
+                fallbackBuffer = disk.ReadSectors(startSector, sectorsToRead, sectorSize);
                 
-                if (std::memcmp(clusterHeader.data(), sig.signature, sig.signatureSize) == 0) {
-                    // Found signature! Use sequential reader to find file end
-                    uint64_t diskOffset = sector * sectorSize;
-                    uint64_t maxScanSize = std::min(
-                        2ULL * 1024 * 1024 * 1024,  // 2GB max per file
-                        diskSize - diskOffset
-                    );
-                    
-                    SequentialReader reader(disk, diskOffset, maxScanSize, sectorSize);
-                    auto fileSize = m_fileCarver->ParseFileEnd(reader, sig);
-                    
-                    if (fileSize.has_value() && fileSize.value() > 0) {
-                        DeletedFileEntry carvedFile;
-                        carvedFile.name = std::to_wstring(filesFound + 1) + L"." + 
-                                         std::wstring(sig.extension, sig.extension + strlen(sig.extension));
-                        carvedFile.path = L"<carved from free space>";
-                        carvedFile.size = fileSize.value();
-                        carvedFile.sizeFormatted = StringUtils::FormatFileSize(fileSize.value());
-                        carvedFile.filesystemType = L"NTFS";
-                        carvedFile.hasDeletedTime = false;
-                        carvedFile.isRecoverable = true;
-                        carvedFile.clusterSize = bytesPerCluster;
-                        
-                        // Build cluster list
-                        uint64_t clustersNeeded = (fileSize.value() + bytesPerCluster - 1) / bytesPerCluster;
-                        for (uint64_t i = 0; i < clustersNeeded; i++) {
-                            carvedFile.clusters.push_back(cluster + i);
-                        }
-                        
-                        onFileFound(carvedFile);
-                        filesFound++;
-                        
-                        // Skip clusters occupied by this file
-                        cluster += std::max<uint64_t>(1, clustersNeeded - 1);
+                if (fallbackBuffer.empty()) {
+                    // Skip this batch on read failure
+                    batchStart += batchClusters;
+                    continue;
+                }
+                
+                batchData = fallbackBuffer.data();
+                batchDataSize = fallbackBuffer.size();
+            }
+            
+            // Scan batch at cluster boundaries for signatures
+            uint64_t clusterInBatch = 0;
+            while (clusterInBatch < batchClusters && filesFound < m_config.fileCarvingMaxFiles) {
+                bool advancedBySkip = false;  // Track if we already advanced
+                
+                uint64_t offsetInBatch = clusterInBatch * bytesPerCluster;
+                uint64_t currentCluster = batchStart + clusterInBatch;
+                
+                // Bounds check
+                if (offsetInBatch + 16 > batchDataSize) {
+                    break;
+                }
+                
+                const uint8_t* clusterPtr = batchData + offsetInBatch;
+                
+                // Check all signatures at this cluster boundary
+                for (const auto& sig : signatures) {
+                    if (offsetInBatch + sig.signatureSize > batchDataSize) {
+                        continue;
                     }
                     
-                    break; // Found signature, no need to check others
+                    if (std::memcmp(clusterPtr, sig.signature, sig.signatureSize) == 0) {
+                        // Check deduplication - use continue to check other signatures
+                        if (seenStartClusters.find(currentCluster) != seenStartClusters.end()) {
+                            continue;  // Already processed, try next signature
+                        }
+                        
+                        // Found signature! Use sequential reader to find file end
+                        uint64_t diskOffset = currentCluster * bytesPerCluster;
+                        uint64_t maxScanSize = std::min(
+                            Constants::MAX_FILE_SCAN_SIZE,
+                            diskSize - diskOffset
+                        );
+                        
+                        SequentialReader reader(disk, diskOffset, maxScanSize, sectorSize);
+                        auto fileSize = m_fileCarver->ParseFileEnd(reader, sig);
+                        
+                        if (fileSize.has_value() && fileSize.value() > 0) {
+                            // Add to dedup set BEFORE emitting
+                            seenStartClusters.insert(currentCluster);
+                            
+                            DeletedFileEntry carvedFile;
+                            carvedFile.name = std::to_wstring(filesFound + 1) + L"." + 
+                                             std::wstring(sig.extension, sig.extension + strlen(sig.extension));
+                            carvedFile.path = L"<carved from free space>";
+                            carvedFile.size = fileSize.value();
+                            carvedFile.sizeFormatted = StringUtils::FormatFileSize(fileSize.value());
+                            carvedFile.filesystemType = L"NTFS";
+                            carvedFile.hasDeletedTime = false;
+                            carvedFile.isRecoverable = true;
+                            carvedFile.clusterSize = bytesPerCluster;
+                            
+                            // Build cluster list
+                            uint64_t clustersNeeded = (fileSize.value() + bytesPerCluster - 1) / bytesPerCluster;
+                            for (uint64_t i = 0; i < clustersNeeded; i++) {
+                                carvedFile.clusters.push_back(currentCluster + i);
+                            }
+                            
+                            onFileFound(carvedFile);
+                            filesFound++;
+                            
+                            // Skip clusters occupied by this file
+                            uint64_t clustersToSkip = std::max<uint64_t>(1, clustersNeeded);
+                            clusterInBatch += clustersToSkip;
+                            advancedBySkip = true;  // Mark that we already advanced
+                            
+                            // Mark all spanned clusters in dedup set
+                            for (uint64_t i = 1; i < clustersToSkip && (currentCluster + i) < maxClusters; i++) {
+                                seenStartClusters.insert(currentCluster + i);
+                            }
+                        }
+                        
+                        break;  // Found signature, no need to check others for this cluster
+                    }
+                }
+                
+                // Only increment if we didn't skip ahead
+                if (!advancedBySkip) {
+                    clusterInBatch++;
                 }
             }
             
-            // Update progress every 10,000 clusters
-            if ((cluster % Constants::Progress::CARVING_INTERVAL) == 0) {
-                float progress = 0.66f + (0.34f * (static_cast<float>(cluster) / maxClusters));
-                float percentDone = (static_cast<float>(cluster) / maxClusters) * 100.0f;
-                float gbProcessed = (cluster * bytesPerCluster) / 1000000000.0f;
-                float gbTotal = (maxClusters * bytesPerCluster) / 1000000000.0f;
-                
-                wchar_t statusMsg[256];
-                swprintf_s(statusMsg, L"File carving: %.1f%% (%.2f / %.2f GB) - %llu files found", 
-                          percentDone, gbProcessed, gbTotal, filesFound);
-                onProgress(statusMsg, progress);
+            // Clean up mapping if used (for sliding window, this just invalidates the struct)
+            if (usedMapping) {
+                disk.UnmapRegion(region);
             }
+            
+            // Move to next batch
+            batchStart += batchClusters;
+            
+            // Update progress per batch
+            float progress = 0.66f + (0.34f * (static_cast<float>(batchStart) / maxClusters));
+            float percentDone = (static_cast<float>(batchStart) / maxClusters) * 100.0f;
+            float gbProcessed = (batchStart * bytesPerCluster) / 1000000000.0f;
+            float gbTotal = (maxClusters * bytesPerCluster) / 1000000000.0f;
+            
+            wchar_t statusMsg[256];
+            swprintf_s(statusMsg, L"File carving: %.1f%% (%.2f / %.2f GB) - %llu files found", 
+                      percentDone, gbProcessed, gbTotal, filesFound);
+            onProgress(statusMsg, progress);
         }
         
         wchar_t completeMsg[256];
@@ -788,7 +935,6 @@ bool DiskForensicsCore::ProcessFileCarvingMemoryMapped(
         return false;
     }
 }
-
 
 std::wstring FormatFileSize(uint64_t bytes) {
     return StringUtils::FormatFileSize(bytes);

@@ -1,4 +1,4 @@
-﻿// FileSignatures.cpp
+// FileSignatures.cpp
 #include "FileSignatures.h"
 
 namespace KVC {

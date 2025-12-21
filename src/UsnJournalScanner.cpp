@@ -1,4 +1,4 @@
-﻿// UsnJournalScanner.cpp
+// UsnJournalScanner.cpp
 #include "UsnJournalScanner.h"
 #include "Constants.h"
 #include <cstring>

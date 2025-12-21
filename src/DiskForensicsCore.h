@@ -15,6 +15,7 @@
 #include <functional>
 #include <chrono>
 #include <set>
+#include <unordered_set>
 
 namespace KVC {
 
@@ -89,6 +90,10 @@ private:
     HANDLE m_handle;
     HANDLE m_mappingHandle;
     void* m_mappedView;
+    
+    // Sliding window state for memory mapping reuse
+    uint64_t m_currentMappedOffset;     // Start offset of current mapped window
+    uint64_t m_currentMappedSize;       // Size of current mapped window
 };
 
 class NTFSScanner;

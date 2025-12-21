@@ -1,4 +1,4 @@
-﻿// RecoveryApplication.cpp
+// RecoveryApplication.cpp
 // Main GUI application implementation for the recovery tool.
 
 #include "RecoveryApplication.h"

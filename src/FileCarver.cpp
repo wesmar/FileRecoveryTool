@@ -84,6 +84,8 @@ void SequentialReader::FillBuffer() {
     }
 }
 
+// Fill buffer for linear (contiguous) reading mode.
+// FIXED: Correct sector calculation - no unconditional +1 sector.
 void SequentialReader::FillBufferLinear() {
     uint64_t diskOffset = m_startOffset + m_position;
     uint64_t remaining = m_maxSize - m_position;
@@ -95,9 +97,14 @@ void SequentialReader::FillBufferLinear() {
     
     // Calculate how much to read (min of buffer size and remaining bytes)
     uint64_t toRead = std::min<uint64_t>(BUFFER_SIZE, remaining);
+    
+    // Calculate sector alignment
+    uint64_t offsetInSector = diskOffset % m_sectorSize;
     uint64_t startSector = diskOffset / m_sectorSize;
-    // Read extra sector to handle misalignment
-    uint64_t sectorsNeeded = (toRead + m_sectorSize - 1) / m_sectorSize + 1;
+    
+    // Calculate sectors needed: includes partial sector at start + data + partial sector at end
+    // No unconditional +1; only read what we actually need
+    uint64_t sectorsNeeded = (offsetInSector + toRead + m_sectorSize - 1) / m_sectorSize;
     
     auto data = m_disk.ReadSectors(startSector, sectorsNeeded, m_sectorSize);
     
@@ -107,7 +114,6 @@ void SequentialReader::FillBufferLinear() {
     }
     
     // Handle sector alignment - extract bytes starting at our offset
-    uint64_t offsetInSector = diskOffset % m_sectorSize;
     size_t available = data.size() > offsetInSector ? data.size() - static_cast<size_t>(offsetInSector) : 0;
     size_t toCopy = std::min<size_t>(available, static_cast<size_t>(toRead));
     
@@ -117,6 +123,8 @@ void SequentialReader::FillBufferLinear() {
     m_bufferFileOffset = m_position;
 }
 
+// Fill buffer for fragmented reading mode.
+// FIXED: Correct sector calculation using disk offset modulo sector size.
 void SequentialReader::FillBufferFragmented() {
     uint64_t remaining = m_maxSize - m_position;
     
@@ -155,9 +163,12 @@ void SequentialReader::FillBufferFragmented() {
         uint64_t sectorsPerCluster = bytesPerCluster / m_sectorSize;
         uint64_t diskOffset = loc.cluster * sectorsPerCluster * m_sectorSize + loc.offsetInCluster;
         
-        // Read from disk
+        // Calculate sector alignment BEFORE reading
+        uint64_t offsetInSector = diskOffset % m_sectorSize;
         uint64_t startSector = diskOffset / m_sectorSize;
-        uint64_t sectorsNeeded = (toRead + loc.offsetInCluster + m_sectorSize - 1) / m_sectorSize;
+        
+        // Calculate sectors needed based on offset within sector + bytes to read
+        uint64_t sectorsNeeded = (offsetInSector + toRead + m_sectorSize - 1) / m_sectorSize;
         
         auto data = m_disk.ReadSectors(startSector, sectorsNeeded, m_sectorSize);
         
@@ -165,8 +176,7 @@ void SequentialReader::FillBufferFragmented() {
             break;
         }
         
-        // Copy data to buffer
-        uint64_t offsetInSector = diskOffset % m_sectorSize;
+        // Copy data to buffer, accounting for sector alignment
         size_t available = data.size() > offsetInSector ? data.size() - static_cast<size_t>(offsetInSector) : 0;
         size_t toCopy = std::min<size_t>(available, toRead);
         
@@ -334,6 +344,7 @@ std::optional<FileSignature> FileCarver::ScanClusterForSignature(
 }
 
 // Parse file size from header using format-specific logic.
+// FIXED: Use byte-based limit instead of cluster-based to prevent huge reads.
 std::optional<uint64_t> FileCarver::ParseFileSize(
     DiskHandle& disk,
     uint64_t cluster,
@@ -353,8 +364,11 @@ std::optional<uint64_t> FileCarver::ParseFileSize(
         sector = clusterHeapOffset + ((cluster - 2) * sectorsPerCluster);
     }
     
-    // Read 256KB for header parsing (enough for most file format headers)
-    auto data = disk.ReadSectors(sector, sectorsPerCluster * Constants::Carving::HEADER_READ_CLUSTERS, sectorSize);
+    // Use byte-based limit for header reading (1MB is enough for any file format header)
+    uint64_t bytesToRead = Constants::Carving::HEADER_READ_SIZE;
+    uint64_t sectorsNeeded = (bytesToRead + sectorSize - 1) / sectorSize;
+    
+    auto data = disk.ReadSectors(sector, sectorsNeeded, sectorSize);
     
     if (data.empty()) {
         return std::nullopt;

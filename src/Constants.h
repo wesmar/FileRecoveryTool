@@ -32,11 +32,20 @@ constexpr uint8_t  SECTORS_PER_CLUSTER_DEFAULT = 8;
 constexpr uint64_t MAX_MAPPING_SIZE = 256 * MEGABYTE;
 constexpr uint64_t ALLOCATION_GRANULARITY = 64 * KILOBYTE;
 
+// Maximum single ReadFile call size (must fit in DWORD for Windows API)
+constexpr uint64_t MAX_READ_CHUNK = 16 * MEGABYTE;
+
+// Maximum file size to scan during carving (prevents runaway parsing)
+constexpr uint64_t MAX_FILE_SCAN_SIZE = 2ULL * GIGABYTE;
+
 // ============================================================================
 // Batch Processing Sizes
 // ============================================================================
 constexpr uint64_t CLUSTERS_PER_BATCH = 65536;
 constexpr uint64_t DIRECTORY_READ_LIMIT = 2 * MEGABYTE;
+
+// Carving batch size in clusters (default ~256MB per batch at 4KB clusters)
+constexpr uint64_t CARVING_BATCH_CLUSTERS = 65536;
 
 // ============================================================================
 // NTFS-Specific Constants

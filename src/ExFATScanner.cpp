@@ -1,4 +1,4 @@
-﻿// ExFATScanner.cpp
+// ExFATScanner.cpp
 #include "ExFATScanner.h"
 #include "Constants.h"
 #include "StringUtils.h"
