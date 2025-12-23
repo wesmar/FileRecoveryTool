@@ -1,16 +1,35 @@
-// RecoveryEngine.cpp
+// ============================================================================
+// RecoveryEngine.cpp - File Recovery Engine Implementation
+// ============================================================================
+// Uses VolumeReader for consistent LCN-based cluster access.
+// Exception-based error handling per Phase 4 of architecture refactor.
+// ============================================================================
+
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
+
 #include "RecoveryEngine.h"
-#include "StringUtils.h"
+#include "RecoveryCandidate.h"
+#include "SafetyLimits.h"
+
+#include <Windows.h>
+#include <climits>
 #include <fstream>
 #include <filesystem>
 #include <cwctype>
 #include <algorithm>
+#include <vector>
+#include <string>
 
 namespace KVC {
 
 RecoveryEngine::RecoveryEngine() = default;
 RecoveryEngine::~RecoveryEngine() = default;
+
+// ============================================================================
+// Destination Validation
+// ============================================================================
 
 bool RecoveryEngine::ValidateDestination(wchar_t sourceDrive, const std::wstring& destPath) {
     if (destPath.length() < 2) {
@@ -25,7 +44,7 @@ bool RecoveryEngine::ValidateDestination(wchar_t sourceDrive, const std::wstring
 
     // UNC paths (\\server\share) are always allowed (network location)
     if (fullPath[0] == L'\\' && fullPath[1] == L'\\') {
-        return true;
+        return true; // Valid network path
     }
 
     // Check for drive letter path
@@ -36,246 +55,267 @@ bool RecoveryEngine::ValidateDestination(wchar_t sourceDrive, const std::wstring
     wchar_t destDrive = static_cast<wchar_t>(towupper(fullPath[0]));
     wchar_t srcDrive = static_cast<wchar_t>(towupper(sourceDrive));
 
-    return destDrive != srcDrive;
+    if (destDrive == srcDrive) {
+        return false;
+    }
+    
+    return true;
 }
 
-bool RecoveryEngine::RecoverFile(
-    const DeletedFileEntry& file,
+// ============================================================================
+// Geometry Builder
+// ============================================================================
+
+VolumeGeometry RecoveryEngine::BuildGeometry(DiskHandle& disk, const RecoveryCandidate& file) {
+    VolumeGeometry geom;
+
+    geom.sectorSize = disk.GetSectorSize();
+    geom.bytesPerCluster = file.file.GetFragments().BytesPerCluster();
+    geom.totalClusters = disk.GetDiskSize() / geom.bytesPerCluster;
+    geom.volumeStartOffset = file.volumeStartOffset;
+
+    // Determine filesystem type from source
+    if (file.source == RecoverySource::MFT || file.source == RecoverySource::USN) {
+        geom.fsType = FilesystemType::NTFS;
+    } else if (file.source == RecoverySource::ExFAT) {
+        geom.fsType = FilesystemType::ExFAT;
+    } else if (file.source == RecoverySource::FAT32) {
+        geom.fsType = FilesystemType::FAT32;
+    } else {
+        geom.fsType = FilesystemType::Unknown;
+    }
+
+    return geom;
+}
+
+// ============================================================================
+// Single File Recovery
+// ============================================================================
+
+void RecoveryEngine::RecoverFile(
+    const RecoveryCandidate& file,
     wchar_t sourceDrive,
     const std::wstring& destinationPath,
-    ProgressCallback onProgress)
+    const ProgressCallback& onProgress)
 {
+    // Validate destination
     if (!ValidateDestination(sourceDrive, destinationPath)) {
-        onProgress(L"Invalid destination - cannot recover to source drive", 0.0f);
-        return false;
+        throw DestinationInvalidError("Invalid destination path");
     }
 
+    // Open source drive
     DiskHandle disk(sourceDrive);
     if (!disk.Open()) {
-        onProgress(L"Failed to open source drive", 0.0f);
-        return false;
+        throw DiskReadError(0, 0, GetLastError());
     }
 
-    return WriteRecoveredData(disk, file, destinationPath, onProgress);
+    // Build geometry and create VolumeReader
+    VolumeGeometry geom = BuildGeometry(disk, file);
+    VolumeReader reader(disk, geom);
+
+    // Recover the file
+    WriteRecoveredData(reader, file, destinationPath, onProgress);
 }
 
-bool RecoveryEngine::RecoverMultipleFiles(
-    const std::vector<DeletedFileEntry>& files,
+// ============================================================================
+// Multiple File Recovery
+// ============================================================================
+
+int RecoveryEngine::RecoverMultipleFiles(
+    const std::vector<RecoveryCandidate>& files,
     wchar_t sourceDrive,
     const std::wstring& destinationFolder,
-    ProgressCallback onProgress)
+    const ProgressCallback& onProgress)
 {
     if (files.empty()) {
-        onProgress(L"No files to recover", 0.0f);
-        return false;
+        if (onProgress) {
+            onProgress(L"No files to recover", 0.0f);
+        }
+        return 0;
     }
 
-    // Validate that destination is not on the same drive as source
-    // This prevents overwriting potentially recoverable data
+    // Validate destination (throws on invalid)
     if (!ValidateDestination(sourceDrive, destinationFolder)) {
-        onProgress(L"Invalid destination - cannot recover to source drive", 0.0f);
-        return false;
+        throw DestinationInvalidError("Invalid destination folder");
     }
 
-    // Open the source drive for raw sector reading
+    // Open source drive
     DiskHandle disk(sourceDrive);
     if (!disk.Open()) {
-        onProgress(L"Failed to open source drive", 0.0f);
-        return false;
+        throw DiskReadError(0, 0, GetLastError());
     }
 
-    // Process each file in the recovery list
     int successCount = 0;
     int totalFiles = static_cast<int>(files.size());
 
     for (int i = 0; i < totalFiles; ++i) {
         const auto& file = files[i];
         std::wstring destPath = destinationFolder + L"\\" + file.name;
-        
-        // Calculate progress percentage
+
+        // Progress
         float progress = static_cast<float>(i) / totalFiles;
+        if (onProgress) {
+            wchar_t progressMsg[512];
+            swprintf_s(progressMsg, L"Recovering %s (%d/%d)",
+                      file.name.c_str(), i + 1, totalFiles);
+            onProgress(progressMsg, progress);
+        }
 
-        wchar_t progressMsg[512];
-        swprintf_s(progressMsg, L"Recovering %s (%d/%d)", file.name.c_str(), i + 1, totalFiles);
-        onProgress(progressMsg, progress);
+        try {
+            // Build geometry for this file
+            VolumeGeometry geom = BuildGeometry(disk, file);
+            VolumeReader reader(disk, geom);
 
-        if (WriteRecoveredData(disk, file, destPath, onProgress)) {
+            WriteRecoveredData(reader, file, destPath, onProgress);
             ++successCount;
+        } catch (const ForensicsException& e) {
+            // Log error but continue with other files
+            if (onProgress) {
+                wchar_t errMsg[512];
+                swprintf_s(errMsg, L"Failed to recover %s: %hs",
+                          file.name.c_str(), e.what());
+                onProgress(errMsg, -1.0f);
+            }
         }
     }
 
-    wchar_t completeMsg[256];
-    swprintf_s(completeMsg, L"Recovery complete: %d/%d files recovered", successCount, totalFiles);
-    onProgress(completeMsg, 1.0f); // Set 100% completion
+    if (onProgress) {
+        wchar_t completeMsg[256];
+        swprintf_s(completeMsg, L"Recovery complete: %d/%d files recovered",
+                  successCount, totalFiles);
+        onProgress(completeMsg, 1.0f);
+    }
 
-    return successCount > 0;
+    return successCount;
 }
 
-bool RecoveryEngine::WriteRecoveredData(
-    DiskHandle& disk,
-    const DeletedFileEntry& file,
+// ============================================================================
+// Data Writing with VolumeReader
+// ============================================================================
+
+void RecoveryEngine::WriteRecoveredData(
+    VolumeReader& reader,
+    const RecoveryCandidate& file,
     const std::wstring& outputPath,
-    ProgressCallback& onProgress)
+    const ProgressCallback& onProgress)
 {
     // ========================================================================
     // Phase 1: Validate file has recoverable data
     // ========================================================================
-    
-    if (file.size == 0 && file.residentData.empty()) {
-        onProgress(L"File has no data to recover", -1.0f); // -1.0f to keep previous progress
-        return false;
+
+    if (file.fileSize == 0 && !file.file.HasResidentData()) {
+        throw InsufficientDataError(1, 0);
     }
 
-    // Check if we have actual data locations for non-resident files
-    // This prevents creating empty files when cluster locations are lost
-    if (file.residentData.empty() && file.clusterRanges.empty() && file.clusters.empty()) {
-        wchar_t msg[512];
-        swprintf_s(msg, L"Cannot recover %s: cluster locations lost (metadata exists but data location unknown)", 
-                   file.name.c_str());
-        onProgress(msg, -1.0f);
-        return false;
+    // Check for data locations
+    if (!file.file.HasResidentData() && file.file.GetFragments().IsEmpty()) {
+        throw RecoveryError("Cluster locations lost - metadata exists but data location unknown");
     }
 
     // ========================================================================
     // Phase 2: Create output file
     // ========================================================================
-    
+
     std::ofstream outFile(outputPath, std::ios::binary | std::ios::trunc);
     if (!outFile.is_open()) {
-        wchar_t msg[512];
-        swprintf_s(msg, L"Failed to create output file: %s", outputPath.c_str());
-        onProgress(msg, -1.0f);
-        return false;
+        throw RecoveryError("Failed to create output file");
     }
 
     // ========================================================================
     // Phase 3: Handle resident data (small files stored directly in MFT)
     // ========================================================================
-    
-    if (!file.residentData.empty()) {
-        outFile.write(reinterpret_cast<const char*>(file.residentData.data()), 
-                     file.residentData.size());
+
+    if (file.file.HasResidentData()) {
+        const auto& residentData = file.file.GetResidentData();
+        outFile.write(reinterpret_cast<const char*>(residentData.data()),
+                     residentData.size());
         outFile.flush();
         outFile.close();
-        return outFile.good();
-    }
 
-    // ========================================================================
-    // Phase 4: Validate cluster and sector geometry
-    // ========================================================================
-    
-    if (file.clusterSize == 0) {
-        outFile.close();
-        onProgress(L"Invalid cluster size", -1.0f);
-        return false;
-    }
-
-    uint64_t sectorSize = disk.GetSectorSize();
-    if (sectorSize == 0) {
-        outFile.close();
-        onProgress(L"Invalid sector size", -1.0f);
-        return false;
-    }
-
-    uint64_t sectorsPerCluster = file.clusterSize / sectorSize;
-    if (sectorsPerCluster == 0) {
-        outFile.close();
-        onProgress(L"Invalid sectors per cluster", -1.0f);
-        return false;
-    }
-
-    // ========================================================================
-    // Phase 5: Recover data from disk clusters
-    // ========================================================================
-    
-    uint64_t bytesWritten = 0;
-    bool recoverySuccessful = false;
-
-    // Method A: Use cluster ranges (preferred for non-resident files)
-    if (!file.clusterRanges.empty()) {
-        for (const auto& range : file.clusterRanges) {
-            if (bytesWritten >= file.size) break;
-            // Process each cluster in the range
-            for (uint64_t i = 0; i < range.count && bytesWritten < file.size; ++i) {
-                uint64_t cluster = range.start + i;
-                uint64_t sector = cluster * sectorsPerCluster;
-
-                // Read raw sectors from disk
-                auto data = disk.ReadSectors(sector, sectorsPerCluster, sectorSize);
-                size_t bytesToWrite = std::min(
-                    static_cast<size_t>(file.size - bytesWritten),
-                    data.empty() ? static_cast<size_t>(file.clusterSize) : data.size()
-                );
-                // Write data or zeros if sector is unreadable
-                if (data.empty()) {
-                    std::vector<char> zeroBuffer(bytesToWrite, 0);
-                    outFile.write(zeroBuffer.data(), bytesToWrite);
-                } else {
-                    outFile.write(reinterpret_cast<const char*>(data.data()), bytesToWrite);
-                }
-
-                if (!outFile.good()) {
-                    wchar_t msg[256];
-                    swprintf_s(msg, L"Write error at cluster %llu", cluster);
-                    onProgress(msg, -1.0f);
-                    outFile.close();
-                    return false;
-                }
-
-                bytesWritten += bytesToWrite;
-                recoverySuccessful = true;
-            }
+        if (!outFile.good()) {
+            throw RecoveryError("Failed to write resident data");
         }
+        return;
     }
-    // Method B: Use individual cluster list (for carved files)
-    else if (!file.clusters.empty()) {
-        for (uint64_t cluster : file.clusters) {
-            if (bytesWritten >= file.size) break;
-            uint64_t sector = cluster * sectorsPerCluster;
-            auto data = disk.ReadSectors(sector, sectorsPerCluster, sectorSize);
-            size_t bytesToWrite = std::min(
-                static_cast<size_t>(file.size - bytesWritten),
-                static_cast<size_t>(file.clusterSize)
-            );
-            if (data.empty()) {
-                std::vector<char> zeroBuffer(bytesToWrite, 0);
-                outFile.write(zeroBuffer.data(), bytesToWrite);
-            } else {
-                size_t validBytes = std::min(bytesToWrite, data.size());
-                outFile.write(reinterpret_cast<const char*>(data.data()), validBytes);
+
+    // ========================================================================
+    // Phase 4: Validate geometry
+    // ========================================================================
+
+    const VolumeGeometry& geom = reader.Geometry();
+
+    if (geom.bytesPerCluster == 0) {
+        outFile.close();
+        throw InvalidGeometryError("Invalid cluster size (0)");
+    }
+
+    // ========================================================================
+    // Phase 5: Recover data from disk clusters using VolumeReader
+    // ========================================================================
+
+    uint64_t bytesWritten = 0;
+
+    // Use FragmentMap to recover data
+    const auto& runs = file.file.GetFragments().GetRuns();
+    for (const auto& run : runs) {
+        if (bytesWritten >= file.fileSize) break;
+
+        // Read clusters using VolumeReader (LCN-based)
+        try {
+            auto data = reader.ReadClusters(run.startCluster, run.clusterCount);
+
+            // Calculate how much to write
+            uint64_t bytesInRun = run.clusterCount * geom.bytesPerCluster;
+            uint64_t bytesToWrite = std::min(bytesInRun, file.fileSize - bytesWritten);
+
+            if (data.size() < bytesToWrite) {
+                bytesToWrite = data.size();
             }
+
+            outFile.write(reinterpret_cast<const char*>(data.data()),
+                         static_cast<std::streamsize>(bytesToWrite));
 
             if (!outFile.good()) {
-                wchar_t msg[256];
-                swprintf_s(msg, L"Write error at cluster %llu", cluster);
-                onProgress(msg, -1.0f);
                 outFile.close();
-                return false;
+                throw RecoveryError("Write error during recovery");
             }
 
             bytesWritten += bytesToWrite;
-            recoverySuccessful = true;
+
+        } catch (const ClusterOutOfBoundsError&) {
+            // Write zeros for out-of-bounds clusters
+            uint64_t bytesInRun = run.clusterCount * geom.bytesPerCluster;
+            uint64_t bytesToWrite = std::min(bytesInRun, file.fileSize - bytesWritten);
+            std::vector<char> zeroBuffer(static_cast<size_t>(bytesToWrite), 0);
+            outFile.write(zeroBuffer.data(), static_cast<std::streamsize>(bytesToWrite));
+            bytesWritten += bytesToWrite;
+        } catch (const DiskReadError&) {
+            // Write zeros for unreadable clusters
+            uint64_t bytesInRun = run.clusterCount * geom.bytesPerCluster;
+            uint64_t bytesToWrite = std::min(bytesInRun, file.fileSize - bytesWritten);
+            std::vector<char> zeroBuffer(static_cast<size_t>(bytesToWrite), 0);
+            outFile.write(zeroBuffer.data(), static_cast<std::streamsize>(bytesToWrite));
+            bytesWritten += bytesToWrite;
         }
     }
 
     // ========================================================================
     // Phase 6: Finalize and verify
     // ========================================================================
-    
+
     outFile.flush();
     outFile.close();
 
-    if (!recoverySuccessful || bytesWritten == 0) {
-        wchar_t msg[256];
-        swprintf_s(msg, L"Failed to write data for %s", file.name.c_str());
-        onProgress(msg, -1.0f);
-        return false;
+    if (bytesWritten == 0) {
+        throw RecoveryError("No data was written during recovery");
     }
 
-    wchar_t progressMsg[256];
-    swprintf_s(progressMsg, L"Recovered %llu bytes for %s", bytesWritten, file.name.c_str());
-    onProgress(progressMsg, -1.0f);
-
-    return true;
+    if (onProgress) {
+        wchar_t progressMsg[256];
+        swprintf_s(progressMsg, L"Recovered %llu bytes for %s",
+                  bytesWritten, file.name.c_str());
+        onProgress(progressMsg, -1.0f);
+    }
 }
+
 } // namespace KVC

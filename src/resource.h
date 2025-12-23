@@ -2,6 +2,7 @@
 // Microsoft Visual C++ generated include file.
 // Used by kvc_recovery.rc
 //
+
 #define IDI_MAINICON                    101
 #define IDR_MAINMENU                    102
 #define IDD_ABOUTBOX                    103

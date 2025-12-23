@@ -1,12 +1,14 @@
 // ============================================================================
-// ForensicsExceptions.h - Exception Hierarchy for Forensics Operations
+// ForensicsExceptions.h - Exception Types for Forensic Operations
 // ============================================================================
-// Modern C++ exception classes for disk forensics error handling.
-// Replaces bool return codes with semantic exception types.
+// Defines custom exception classes for disk forensics error handling.
+// Provides detailed error information for debugging and user feedback.
 // ============================================================================
+
 
 #pragma once
 
+#include <climits>
 #include <stdexcept>
 #include <string>
 #include <cstdint>
@@ -14,182 +16,193 @@
 namespace KVC {
 
 // ============================================================================
-// Base Exception
+// Base Exception Class
 // ============================================================================
 
 class ForensicsException : public std::runtime_error {
 public:
     explicit ForensicsException(const std::string& message)
         : std::runtime_error(message)
-        , m_errorCode(0)
     {}
     
-    ForensicsException(const std::string& message, uint32_t errorCode)
+    explicit ForensicsException(const char* message)
         : std::runtime_error(message)
-        , m_errorCode(errorCode)
     {}
-    
-    uint32_t ErrorCode() const noexcept { return m_errorCode; }
-
-protected:
-    uint32_t m_errorCode;
 };
 
 // ============================================================================
 // Disk I/O Errors
 // ============================================================================
 
-class DiskIOError : public ForensicsException {
+class DiskReadError : public ForensicsException {
 public:
-    DiskIOError(const std::string& message, uint64_t sector = 0, uint64_t count = 0)
-        : ForensicsException(message)
+    DiskReadError(uint64_t sector, uint64_t count, uint32_t errorCode)
+        : ForensicsException(BuildMessage(sector, count, errorCode))
         , m_sector(sector)
-        , m_sectorCount(count)
+        , m_count(count)
+        , m_errorCode(errorCode)
     {}
     
-    DiskIOError(const std::string& message, uint32_t errorCode, uint64_t sector = 0)
-        : ForensicsException(message, errorCode)
-        , m_sector(sector)
-        , m_sectorCount(0)
-    {}
-    
-    uint64_t Sector() const noexcept { return m_sector; }
-    uint64_t SectorCount() const noexcept { return m_sectorCount; }
+    uint64_t Sector() const { return m_sector; }
+    uint64_t Count() const { return m_count; }
+    uint32_t ErrorCode() const { return m_errorCode; }
 
 private:
-    uint64_t m_sector;
-    uint64_t m_sectorCount;
-};
-
-class DiskReadError : public DiskIOError {
-public:
-    DiskReadError(uint64_t sector, uint64_t count, uint32_t errorCode = 0)
-        : DiskIOError("Failed to read sectors from disk", errorCode, sector)
-    {
-        m_sectorCount = count;
+    static std::string BuildMessage(uint64_t sector, uint64_t count, uint32_t errorCode) {
+        char buffer[256];
+        snprintf(buffer, sizeof(buffer), 
+                "Failed to read %llu sectors starting at sector %llu (error code: 0x%08X)",
+                static_cast<unsigned long long>(count),
+                static_cast<unsigned long long>(sector),
+                errorCode);
+        return std::string(buffer);
     }
     
-private:
-    uint64_t m_sectorCount;
+    uint64_t m_sector;
+    uint64_t m_count;
+    uint32_t m_errorCode;
 };
 
-class DiskMappingError : public DiskIOError {
+class DiskWriteError : public ForensicsException {
 public:
-    DiskMappingError(uint64_t offset, uint64_t size)
-        : DiskIOError("Failed to memory-map disk region")
-        , m_offset(offset)
-        , m_size(size)
+    DiskWriteError(const std::string& path, uint32_t errorCode)
+        : ForensicsException(BuildMessage(path, errorCode))
+        , m_path(path)
+        , m_errorCode(errorCode)
     {}
     
-    uint64_t Offset() const noexcept { return m_offset; }
-    uint64_t Size() const noexcept { return m_size; }
+    const std::string& Path() const { return m_path; }
+    uint32_t ErrorCode() const { return m_errorCode; }
 
 private:
-    uint64_t m_offset;
-    uint64_t m_size;
+    static std::string BuildMessage(const std::string& path, uint32_t errorCode) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer),
+                "Failed to write to file '%s' (error code: 0x%08X)",
+                path.c_str(), errorCode);
+        return std::string(buffer);
+    }
+    
+    std::string m_path;
+    uint32_t m_errorCode;
 };
 
 // ============================================================================
-// Filesystem Corruption Errors
+// Cluster/Geometry Errors
 // ============================================================================
 
-class FilesystemCorruption : public ForensicsException {
-public:
-    enum class Type {
-        InvalidSignature,
-        InvalidBootSector,
-        InvalidMFTRecord,
-        InvalidDataRun,
-        InvalidClusterChain,
-        OutOfBounds,
-        CircularReference
-    };
-    
-    FilesystemCorruption(Type type, const std::string& message)
-        : ForensicsException(message)
-        , m_type(type)
-        , m_location(0)
-    {}
-    
-    FilesystemCorruption(Type type, const std::string& message, uint64_t location)
-        : ForensicsException(message)
-        , m_type(type)
-        , m_location(location)
-    {}
-    
-    Type CorruptionType() const noexcept { return m_type; }
-    uint64_t Location() const noexcept { return m_location; }
-
-private:
-    Type m_type;
-    uint64_t m_location;
-};
-
-class InvalidDataRunError : public FilesystemCorruption {
-public:
-    InvalidDataRunError(uint64_t mftRecord, const std::string& reason)
-        : FilesystemCorruption(Type::InvalidDataRun, 
-            "Invalid data run in MFT record " + std::to_string(mftRecord) + ": " + reason,
-            mftRecord)
-        , m_mftRecord(mftRecord)
-    {}
-    
-    uint64_t MftRecord() const noexcept { return m_mftRecord; }
-
-private:
-    uint64_t m_mftRecord;
-};
-
-class ClusterOutOfBoundsError : public FilesystemCorruption {
+class ClusterOutOfBoundsError : public ForensicsException {
 public:
     ClusterOutOfBoundsError(uint64_t cluster, uint64_t maxCluster)
-        : FilesystemCorruption(Type::OutOfBounds,
-            "Cluster " + std::to_string(cluster) + " exceeds disk bounds (" + 
-            std::to_string(maxCluster) + ")",
-            cluster)
+        : ForensicsException(BuildMessage(cluster, maxCluster))
         , m_cluster(cluster)
         , m_maxCluster(maxCluster)
     {}
     
-    uint64_t Cluster() const noexcept { return m_cluster; }
-    uint64_t MaxCluster() const noexcept { return m_maxCluster; }
+    uint64_t Cluster() const { return m_cluster; }
+    uint64_t MaxCluster() const { return m_maxCluster; }
 
 private:
+    static std::string BuildMessage(uint64_t cluster, uint64_t maxCluster) {
+        char buffer[256];
+        snprintf(buffer, sizeof(buffer),
+                "Cluster %llu is out of bounds (max: %llu)",
+                static_cast<unsigned long long>(cluster),
+                static_cast<unsigned long long>(maxCluster));
+        return std::string(buffer);
+    }
+    
     uint64_t m_cluster;
     uint64_t m_maxCluster;
 };
 
+class InvalidGeometryError : public ForensicsException {
+public:
+    explicit InvalidGeometryError(const std::string& reason)
+        : ForensicsException("Invalid volume geometry: " + reason)
+    {}
+};
+
 // ============================================================================
-// File Format Errors
+// Filesystem Errors
 // ============================================================================
 
-class SignatureMismatch : public ForensicsException {
+class FilesystemError : public ForensicsException {
 public:
-    SignatureMismatch(const std::string& expectedFormat, uint64_t offset = 0)
-        : ForensicsException("Signature mismatch: expected " + expectedFormat)
-        , m_expectedFormat(expectedFormat)
-        , m_offset(offset)
+    explicit FilesystemError(const std::string& message)
+        : ForensicsException(message)
+    {}
+};
+
+class CorruptedDataRunError : public FilesystemError {
+public:
+    CorruptedDataRunError(const std::string& details)
+        : FilesystemError("Corrupted NTFS data run: " + details)
+    {}
+};
+
+class InvalidMFTRecordError : public FilesystemError {
+public:
+    InvalidMFTRecordError(uint64_t recordNumber, const std::string& reason)
+        : FilesystemError(BuildMessage(recordNumber, reason))
+        , m_recordNumber(recordNumber)
     {}
     
-    const std::string& ExpectedFormat() const noexcept { return m_expectedFormat; }
-    uint64_t Offset() const noexcept { return m_offset; }
+    uint64_t RecordNumber() const { return m_recordNumber; }
 
 private:
-    std::string m_expectedFormat;
-    uint64_t m_offset;
+    static std::string BuildMessage(uint64_t recordNumber, const std::string& reason) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer),
+                "Invalid MFT record %llu: %s",
+                static_cast<unsigned long long>(recordNumber),
+                reason.c_str());
+        return std::string(buffer);
+    }
+    
+    uint64_t m_recordNumber;
 };
+
+// ============================================================================
+// File Carving Errors
+// ============================================================================
 
 class FileFormatError : public ForensicsException {
 public:
-    FileFormatError(const std::string& format, const std::string& reason)
-        : ForensicsException(format + " format error: " + reason)
-        , m_format(format)
+    FileFormatError(const std::string& extension, const std::string& reason)
+        : ForensicsException(BuildMessage(extension, reason))
+        , m_extension(extension)
     {}
     
-    const std::string& Format() const noexcept { return m_format; }
+    const std::string& Extension() const { return m_extension; }
 
 private:
-    std::string m_format;
+    static std::string BuildMessage(const std::string& extension, const std::string& reason) {
+        return "Invalid " + extension + " format: " + reason;
+    }
+    
+    std::string m_extension;
+};
+
+class SignatureNotFoundError : public ForensicsException {
+public:
+    explicit SignatureNotFoundError(uint64_t offset)
+        : ForensicsException(BuildMessage(offset))
+        , m_offset(offset)
+    {}
+    
+    uint64_t Offset() const { return m_offset; }
+
+private:
+    static std::string BuildMessage(uint64_t offset) {
+        char buffer[256];
+        snprintf(buffer, sizeof(buffer),
+                "No valid file signature found at offset %llu",
+                static_cast<unsigned long long>(offset));
+        return std::string(buffer);
+    }
+    
+    uint64_t m_offset;
 };
 
 // ============================================================================
@@ -203,33 +216,36 @@ public:
     {}
 };
 
-class DestinationError : public RecoveryError {
+class InsufficientDataError : public RecoveryError {
 public:
-    explicit DestinationError(const std::string& path)
-        : RecoveryError("Invalid destination: " + path)
-        , m_path(path)
+    InsufficientDataError(uint64_t expected, uint64_t actual)
+        : RecoveryError(BuildMessage(expected, actual))
+        , m_expected(expected)
+        , m_actual(actual)
     {}
     
-    const std::string& Path() const noexcept { return m_path; }
+    uint64_t Expected() const { return m_expected; }
+    uint64_t Actual() const { return m_actual; }
 
 private:
-    std::string m_path;
+    static std::string BuildMessage(uint64_t expected, uint64_t actual) {
+        char buffer[256];
+        snprintf(buffer, sizeof(buffer),
+                "Insufficient data: expected %llu bytes, got %llu bytes",
+                static_cast<unsigned long long>(expected),
+                static_cast<unsigned long long>(actual));
+        return std::string(buffer);
+    }
+    
+    uint64_t m_expected;
+    uint64_t m_actual;
 };
 
-class FragmentationError : public RecoveryError {
+class DestinationInvalidError : public RecoveryError {
 public:
-    FragmentationError(uint64_t fileRecord, size_t fragmentCount)
-        : RecoveryError("Excessive fragmentation in record " + std::to_string(fileRecord))
-        , m_fileRecord(fileRecord)
-        , m_fragmentCount(fragmentCount)
+    explicit DestinationInvalidError(const std::string& reason)
+        : RecoveryError("Invalid recovery destination: " + reason)
     {}
-    
-    uint64_t FileRecord() const noexcept { return m_fileRecord; }
-    size_t FragmentCount() const noexcept { return m_fragmentCount; }
-
-private:
-    uint64_t m_fileRecord;
-    size_t m_fragmentCount;
 };
 
 } // namespace KVC

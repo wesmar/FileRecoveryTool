@@ -7,8 +7,10 @@
 // Enhanced with robust NTFS data run parsing and validation.
 // ============================================================================
 
+
 #pragma once
 
+#include <climits>
 #include "DiskForensicsCore.h"
 #include "FragmentedFile.h"
 #include "ForensicsExceptions.h"

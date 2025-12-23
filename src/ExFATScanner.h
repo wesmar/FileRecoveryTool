@@ -2,14 +2,13 @@
 // ExFATScanner.h - ExFAT Filesystem Scanner
 // ============================================================================
 // Implements logical scanning for exFAT volumes.
-// Traverses directory structure and uses FAT chain reading for accuracy.
 // ============================================================================
 
 #pragma once
 
 #include "DiskForensicsCore.h"
+#include "VolumeReader.h"
 #include "Constants.h"
-#include "StringUtils.h"
 #include <vector>
 #include <cstdint>
 #include <deque>
@@ -42,11 +41,6 @@ struct ExFatBootSector {
     uint16_t signature;
 };
 
-struct ExFatEntryHeader {
-    uint8_t entryType;
-    uint8_t data[31];
-};
-
 struct ExFatFileEntry {
     uint8_t entryType;
     uint8_t secondaryCount;
@@ -65,16 +59,16 @@ struct ExFatFileEntry {
 };
 
 struct ExFatStreamEntry {
-    uint8_t entryType;           // Offset 0
-    uint8_t secondaryFlags;      // Offset 1
-    uint8_t reserved1;           // Offset 2
-    uint8_t nameLength;          // Offset 3
-    uint16_t nameHash;           // Offset 4-5
-    uint16_t reserved2;          // Offset 6-7
-    uint64_t validDataLength;    // Offset 8-15
-    uint32_t reserved3;          // Offset 16-19 (FIXED: was uint64_t)
-    uint32_t firstCluster;       // Offset 20-23
-    uint64_t dataLength;         // Offset 24-31
+    uint8_t entryType;
+    uint8_t secondaryFlags;
+    uint8_t reserved1;
+    uint8_t nameLength;
+    uint16_t nameHash;
+    uint16_t reserved2;
+    uint64_t validDataLength;
+    uint32_t reserved3;
+    uint32_t firstCluster;
+    uint64_t dataLength;
 };
 
 struct ExFatNameEntry {
@@ -107,6 +101,7 @@ private:
         uint32_t rootDirCluster;
         uint32_t fatOffset;
         uint32_t fatLength;
+        uint64_t volumeStartOffset;
         std::wstring folderFilter;
         std::wstring filenameFilter;
     };
@@ -118,8 +113,9 @@ private:
 
     ExFatBootSector ReadBootSector(DiskHandle& disk);
     
+    // FIXED: VolumeReader& instead of DiskHandle&
     void ProcessDirectory(
-        DiskHandle& disk, 
+        VolumeReader& reader,
         const DirectoryWorkItem& dirItem,
         std::deque<DirectoryWorkItem>& subDirs,
         DiskForensicsCore::FileFoundCallback onFileFound,
@@ -128,21 +124,21 @@ private:
     );
 
     std::vector<uint8_t> ReadClusterChain(
-        DiskHandle& disk, 
-        uint32_t startCluster, 
+        VolumeReader& reader,
+        uint32_t startCluster,
         const ScanContext& context,
         bool& shouldStop,
         uint64_t limitBytes = 0
     );
 
     std::optional<uint32_t> ReadFATEntry(
-        DiskHandle& disk,
+        VolumeReader& reader,
         const ScanContext& context,
         uint32_t cluster
     );
 
     std::vector<uint32_t> FollowFATChain(
-        DiskHandle& disk,
+        VolumeReader& reader,
         const ScanContext& context,
         uint32_t startCluster,
         size_t maxClusters

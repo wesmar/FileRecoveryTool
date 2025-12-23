@@ -1,8 +1,13 @@
 // UsnJournalScanner.cpp
+
 #include "UsnJournalScanner.h"
 #include "Constants.h"
+
+#include <climits>
 #include <cstring>
 #include <algorithm>
+#include <map>
+#include <vector>
 
 namespace KVC {
 
@@ -425,6 +430,35 @@ std::vector<UsnRecord> UsnJournalScanner::ParseRecordsFromBuffer(
     }
 
     return records;
+}
+
+// ============================================================================
+// UsnRecord Helper Methods
+// ============================================================================
+
+// Check if record represents a file deletion
+bool UsnRecord::IsDeletion() const {
+    return (reason & USN_REASON_FILE_DELETE) != 0;
+}
+
+// Check if record represents a directory
+bool UsnRecord::IsDirectory() const {
+    return (fileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+// Extract MFT record number (lower 48 bits of file reference)
+uint64_t UsnRecord::MftRecordNumber() const {
+    return fileReferenceNumber & 0x0000FFFFFFFFFFFFULL;
+}
+
+// Alias for MftRecordNumber (same value)
+uint64_t UsnRecord::MftIndex() const {
+    return MftRecordNumber();
+}
+
+// Extract sequence number (upper 16 bits of file reference)
+uint16_t UsnRecord::SequenceNumber() const {
+    return static_cast<uint16_t>((fileReferenceNumber >> 48) & 0xFFFF);
 }
 
 } // namespace KVC

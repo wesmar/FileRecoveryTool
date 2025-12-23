@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <climits>
 #include <cstdint>
 
 namespace KVC {
@@ -60,9 +61,9 @@ namespace NTFS {
     constexpr uint64_t PATH_CACHE_SIZE_LIMIT = 100;
     
     // Data run parsing limits
-    constexpr size_t MAX_DATA_RUN_SIZE = 8;          // Max bytes per length/offset field
+    constexpr size_t MAX_DATA_RUN_SIZE = 8;
     constexpr size_t MAX_DATA_RUNS_PER_ATTRIBUTE = 65536;
-}
+} // namespace NTFS
 
 // ============================================================================
 // ExFAT-Specific Constants
@@ -70,36 +71,36 @@ namespace NTFS {
 namespace ExFAT {
     constexpr uint64_t MAX_DELETED_FILE_SIZE = 10ULL * GIGABYTE;
     constexpr uint64_t MAX_SEQUENTIAL_SIZE = 10ULL * GIGABYTE;
-}
+} // namespace ExFAT
 
 // ============================================================================
 // FAT32-Specific Constants
 // ============================================================================
 namespace FAT32 {
     constexpr int MAX_CHAIN_CLUSTERS = 2048;
-}
+} // namespace FAT32
 
 // ============================================================================
 // File Carving Constants
 // ============================================================================
 namespace Carving {
-    constexpr uint64_t HEADER_READ_CLUSTERS = 256;  // Increased from 64 for large files
-    constexpr uint64_t HEADER_READ_SIZE = 1 * MEGABYTE;  // Increased from 256KB for modern media
+    constexpr uint64_t HEADER_READ_CLUSTERS = 256;
+    constexpr uint64_t HEADER_READ_SIZE = 1 * MEGABYTE;
     constexpr uint64_t MAX_SAFE_SKIP = 64 * MEGABYTE;
     constexpr uint64_t MAX_REASONABLE_GAP = 50;
     constexpr uint64_t SIZE_PARSE_TOLERANCE = 10;
-}
+} // namespace Carving
 
 // ============================================================================
 // Fragmentation Support
 // ============================================================================
 namespace Fragmentation {
-    constexpr size_t SEQUENTIAL_READER_BUFFER_SIZE = 65536;  // 64KB read buffer
-    constexpr size_t MAX_FRAGMENTS_PER_FILE = 1000000;       // Safety limit
-    constexpr size_t PARALLEL_VALIDATION_THRESHOLD = 10;     // Min fragments for parallel validation
+    constexpr size_t SEQUENTIAL_READER_BUFFER_SIZE = 65536;
+    constexpr size_t MAX_FRAGMENTS_PER_FILE = 1000000;
+    constexpr size_t PARALLEL_VALIDATION_THRESHOLD = 10;
     constexpr size_t DEFAULT_PARALLEL_THREADS = 4;
-    constexpr uint64_t MAX_CONTIGUOUS_READ = 16 * MEGABYTE;  // Max single contiguous read
-}
+    constexpr uint64_t MAX_CONTIGUOUS_READ = 16 * MEGABYTE;
+} // namespace Fragmentation
 
 // ============================================================================
 // Progress Reporting Intervals
@@ -109,7 +110,15 @@ namespace Progress {
     constexpr uint64_t USN_JOURNAL_INTERVAL = 1000;
     constexpr uint64_t CARVING_INTERVAL = 10000;
     constexpr uint64_t CARVING_BATCH_INTERVAL = 1000;
-}
+} // namespace Progress
 
 } // namespace Constants
+
 } // namespace KVC
+
+// ============================================================================
+// USN Journal & File Attribute Flags
+// ============================================================================
+// Note: These constants are already defined in <winioctl.h>
+// USN_REASON_FILE_DELETE = 0x00000200
+// FILE_ATTRIBUTE_DIRECTORY = 0x00000010

@@ -1,20 +1,20 @@
 // ============================================================================
 // UsnJournalScanner.h - NTFS USN Journal Analyzer
 // ============================================================================
-// Parses the NTFS Change Journal ($UsnJrnl) to detect file deletion events.
-// Maps USN records to MFT references for recovering recently deleted files.
+// Parses the NTFS Change Journal to detect file deletion events.
 // ============================================================================
+
 #pragma once
 
 #include "DiskForensicsCore.h"
+#include "DiskHandle.h"
 #include "Constants.h"
-#include "RecoveryApplication.h"
 #include <cstdint>
 #include <map>
+#include <vector>
 #include <chrono>
 
 namespace KVC {
-
 
 struct UsnRecord {
     uint32_t recordLength;
@@ -30,11 +30,11 @@ struct UsnRecord {
     uint32_t fileAttributes;
     std::wstring filename;
     
-    bool IsDeletion() const { return (reason & USN_REASON_FILE_DELETE) != 0; }
-    bool IsDirectory() const { return (fileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0; }
-    uint64_t MftRecordNumber() const { return fileReferenceNumber & 0x0000FFFFFFFFFFFF; }
-    uint64_t MftIndex() const { return fileReferenceNumber & 0x0000FFFFFFFFFFFF; }
-    uint16_t SequenceNumber() const { return static_cast<uint16_t>(fileReferenceNumber >> 48); }
+    bool IsDeletion() const;
+    bool IsDirectory() const;
+    uint64_t MftRecordNumber() const;
+    uint64_t MftIndex() const;
+    uint16_t SequenceNumber() const;
 };
 
 class UsnJournalScanner {
@@ -42,7 +42,6 @@ public:
     UsnJournalScanner();
     ~UsnJournalScanner();
 
-    // Parse USN Journal and find deleted files
     std::map<uint64_t, std::vector<UsnRecord>> ParseJournal(
         DiskHandle& disk,
         uint64_t maxRecords

@@ -8,7 +8,10 @@
 
 #pragma once
 
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
+#include <climits>
 #include <Windows.h>
 #include <CommCtrl.h>
 #include <string>

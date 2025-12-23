@@ -5,6 +5,8 @@
 #include "RecoveryEngine.h"
 #include "StringUtils.h"
 #include "resource.h"
+
+#include <climits>
 #include <CommCtrl.h>
 #include <commdlg.h>
 #include <shlobj.h>

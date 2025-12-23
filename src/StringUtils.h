@@ -4,8 +4,10 @@
 // Helper functions for string operations and formatting.
 // ============================================================================
 
+
 #pragma once
 
+#include <climits>
 #include <string>
 #include <algorithm>
 #include <cwctype>

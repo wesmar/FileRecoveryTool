@@ -4,8 +4,10 @@
 // Defines binary signatures (magic numbers) for supported file formats.
 // Used by the FileCarver to identify file types in raw disk data.
 // ============================================================================
+
 #pragma once
 
+#include <climits>
 #include <cstdint>
 #include <vector>
 
@@ -52,7 +54,7 @@ namespace Signatures {
     constexpr uint8_t PDF_SIG[] = {0x25, 0x50, 0x44, 0x46};
     constexpr uint8_t ZIP_SIG[] = {0x50, 0x4B, 0x03, 0x04};
     constexpr uint8_t OLE2_SIG[] = {0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1};
-    constexpr uint8_t MP4_SIG[] = {0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70};
+    constexpr uint8_t MP4_SIG[] = {0x66, 0x74, 0x79, 0x70};
     constexpr uint8_t AVI_SIG[] = {0x52, 0x49, 0x46, 0x46};
     constexpr uint8_t MKV_SIG[] = {0x1A, 0x45, 0xDF, 0xA3};
     constexpr uint8_t MP3_SIG[] = {0xFF, 0xFB};

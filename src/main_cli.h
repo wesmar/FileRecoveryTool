@@ -11,7 +11,13 @@
 
 namespace KVC {
 
+// Forward declarations
+struct CarvingStatistics;
+
 // Main CLI entry point - called from wWinMain when command-line args detected
 int RunCLI(int argc, LPWSTR* argv);
+
+// Print carving diagnostics
+void PrintDiagnostics(const CarvingStatistics& stats);
 
 } // namespace KVC

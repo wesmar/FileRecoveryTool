@@ -1,15 +1,14 @@
 // ============================================================================
 // FAT32Scanner.h - FAT32 Filesystem Scanner
 // ============================================================================
-// Implements logical scanning for FAT32 volumes (common on USB drives, SD cards).
-// Handles Long File Name (LFN) entries which precede standard 8.3 entries.
+// Implements logical scanning for FAT32 volumes.
 // ============================================================================
 
 #pragma once
 
 #include "DiskForensicsCore.h"
+#include "VolumeReader.h"
 #include "Constants.h"
-#include "StringUtils.h"
 #include <vector>
 #include <deque>
 
@@ -23,15 +22,14 @@ struct FAT32BootSector {
     uint8_t sectorsPerCluster;
     uint16_t reservedSectors;
     uint8_t numberOfFATs;
-    uint16_t rootEntryCount;     // Must be 0 for FAT32
-    uint16_t totalSectors16;     // Must be 0 for FAT32
+    uint16_t rootEntryCount;
+    uint16_t totalSectors16;
     uint8_t media;
-    uint16_t fatSize16;          // Must be 0 for FAT32
+    uint16_t fatSize16;
     uint16_t sectorsPerTrack;
     uint16_t numberOfHeads;
     uint32_t hiddenSectors;
     uint32_t totalSectors32;
-    // FAT32 specific fields
     uint32_t fatSize32;
     uint16_t extFlags;
     uint16_t fsVersion;
@@ -46,13 +44,12 @@ struct FAT32BootSector {
     char volumeLabel[11];
     char fsType[8];
     uint8_t bootCode[420];
-    uint16_t signature;          // Should be 0xAA55
+    uint16_t signature;
 };
 
-// Standard 8.3 directory entry
 struct FATDirEntry {
-    uint8_t name[11];            // 8.3 format: 0xE5 = deleted, 0x00 = end
-    uint8_t attr;                // 0x0F = LFN entry
+    uint8_t name[11];
+    uint8_t attr;
     uint8_t lcase;
     uint8_t ctimeMs;
     uint16_t ctime;
@@ -65,16 +62,15 @@ struct FATDirEntry {
     uint32_t fileSize;
 };
 
-// Long File Name entry (appears before standard entry)
 struct FATLFNEntry {
-    uint8_t sequenceNo;          // Sequence number (0x40 bit = last entry)
-    uint16_t name1[5];           // First 5 characters (UTF-16)
-    uint8_t attr;                // Must be 0x0F
-    uint8_t type;                // Always 0
-    uint8_t checksum;            // Checksum of short name
-    uint16_t name2[6];           // Next 6 characters (UTF-16)
-    uint16_t firstCluster;       // Must be 0
-    uint16_t name3[2];           // Last 2 characters (UTF-16)
+    uint8_t sequenceNo;
+    uint16_t name1[5];
+    uint8_t attr;
+    uint8_t type;
+    uint8_t checksum;
+    uint16_t name2[6];
+    uint16_t firstCluster;
+    uint16_t name3[2];
 };
 #pragma pack(pop)
 
@@ -100,6 +96,7 @@ private:
         uint64_t dataStartSector;
         uint32_t rootCluster;
         uint64_t clusterSize;
+        uint64_t volumeStartOffset;
         std::wstring folderFilter;
         std::wstring filenameFilter;
     };
@@ -111,8 +108,9 @@ private:
 
     FAT32BootSector ReadBootSector(DiskHandle& disk);
     
+    // FIXED: VolumeReader& instead of DiskHandle&
     void ProcessDirectory(
-        DiskHandle& disk, 
+        VolumeReader& reader,
         const DirectoryWorkItem& dirItem,
         std::deque<DirectoryWorkItem>& subDirs,
         DiskForensicsCore::FileFoundCallback onFileFound,
@@ -120,8 +118,8 @@ private:
     );
 
     std::vector<uint8_t> ReadClusterChain(
-        DiskHandle& disk, 
-        uint32_t startCluster, 
+        VolumeReader& reader,
+        uint32_t startCluster,
         const ScanContext& context,
         uint64_t limitBytes = 0
     );

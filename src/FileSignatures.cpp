@@ -1,5 +1,7 @@
 // FileSignatures.cpp
+
 #include "FileSignatures.h"
+#include <climits>
 
 namespace KVC {
 

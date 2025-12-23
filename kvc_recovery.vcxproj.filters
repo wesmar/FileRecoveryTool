@@ -20,94 +20,122 @@
       <UniqueIdentifier>{9e8e9e8e-9e8e-9e8e-9e8e-9e8e9e8e9e8e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="src\main.cpp">
-      <Filter>Application</Filter>
-    </ClCompile>
-    <ClCompile Include="src\main_cli.cpp">
-      <Filter>Application</Filter>
-    </ClCompile>
-    <ClCompile Include="src\RecoveryApplication.cpp">
-      <Filter>Application</Filter>
-    </ClCompile>
-    <ClCompile Include="src\DiskForensicsCore.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\FragmentedRecoveryEngine.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\NTFSScanner.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-	<ClCompile Include="src\FAT32Scanner.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\ExFATScanner.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\RecoveryEngine.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\FileCarver.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\FileSignatures.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\UsnJournalScanner.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\main_cli.h">
-      <Filter>Application</Filter>
-    </ClInclude>
-    <ClInclude Include="src\Constants.h">
-      <Filter>Application</Filter>
-    </ClInclude>
-    <ClInclude Include="src\StringUtils.h">
-      <Filter>Application</Filter>
-    </ClInclude>	
-    <ClInclude Include="src\RecoveryApplication.h">
-      <Filter>Application</Filter>
-    </ClInclude>
-    <ClInclude Include="src\DiskForensicsCore.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ForensicsExceptions.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\FragmentedFile.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\FragmentedRecoveryEngine.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\NTFSScanner.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-	<ClInclude Include="src\FAT32Scanner.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ExFATScanner.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\RecoveryEngine.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\FileCarver.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\resource.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\FileSignatures.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\UsnJournalScanner.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-  </ItemGroup>
+<ItemGroup>
+  <ClCompile Include="src\main.cpp">
+    <Filter>Application</Filter>
+  </ClCompile>
+  <ClCompile Include="src\main_cli.cpp">
+    <Filter>Application</Filter>
+  </ClCompile>
+  <ClCompile Include="src\RecoveryApplication.cpp">
+    <Filter>Application</Filter>
+  </ClCompile>
+  <ClCompile Include="src\DiskForensicsCore.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\ExFATScanner.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\FAT32Scanner.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\FileCarver.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\FileSignatures.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\FragmentedFile.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\FragmentedRecoveryEngine.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\NTFSScanner.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\RecoveryEngine.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\UsnJournalScanner.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+  <ClCompile Include="src\VolumeReader.cpp">
+    <Filter>Core</Filter>
+  </ClCompile>
+</ItemGroup>
+
+<ItemGroup>
+  <ClInclude Include="src\main_cli.h">
+    <Filter>Application</Filter>
+  </ClInclude>
+  <ClInclude Include="src\RecoveryApplication.h">
+    <Filter>Application</Filter>
+  </ClInclude>
+  <ClInclude Include="src\StringUtils.h">
+    <Filter>Application</Filter>
+  </ClInclude>
+  <ClInclude Include="src\DiskForensicsCore.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\DiskHandle.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\ExFATScanner.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\FAT32Scanner.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\FileCarver.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\FileSignatures.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\ForensicsExceptions.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\FragmentedFile.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\FragmentedRecoveryEngine.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\SafetyLimits.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\Constants.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\NTFSScanner.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\RecoveryEngine.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\RecoveryResult.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\ScanConfiguration.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\UsnJournalScanner.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\VolumeGeometry.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\VolumeReader.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\RecoveryCandidate.h">
+    <Filter>Core</Filter>
+  </ClInclude>
+  <ClInclude Include="src\resource.h">
+    <Filter>Header Files</Filter>
+  </ClInclude>
+</ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\kvc_recovery.rc">
       <Filter>Resource Files</Filter>

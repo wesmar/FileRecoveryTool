@@ -14,12 +14,18 @@
 // (c) 2025 - Modern C++ Implementation
 // ============================================================================
 
-#define NOMINMAX  // Prevent Windows.h min/max macros
+// DEFINE NOMINMAX BEFORE ANY WINDOWS HEADERS TO PREVENT min/max MACROS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <climits>
+#include <Windows.h>
+#include <CommCtrl.h>
+
 #include "RecoveryApplication.h"
 #include "main_cli.h"
 #include "resource.h"
-#include <Windows.h>
-#include <CommCtrl.h>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")

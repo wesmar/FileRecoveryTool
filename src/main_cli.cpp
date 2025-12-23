@@ -10,6 +10,8 @@
 #include "RecoveryEngine.h"
 #include "FileCarver.h"
 #include "StringUtils.h"
+
+#include <climits>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -21,6 +23,9 @@
 #include <fcntl.h>
 
 namespace KVC {
+
+// Forward declaration
+void PrintDiagnostics(const CarvingStatistics& stats);
 
 // CLI configuration parsed from command-line arguments
 struct CLIConfig {
@@ -49,7 +54,7 @@ struct CLIConfig {
 
 // Storage for discovered files
 std::vector<DeletedFileEntry> g_foundFiles;
-FileCarver::CarvingDiagnostics g_carvingStats;
+CarvingStatistics g_carvingStats;
 
 // Display usage information
 void PrintHelp() {
@@ -214,8 +219,8 @@ bool ExportToCSV(const std::wstring& csvPath, const std::vector<DeletedFileEntry
             << (file.isRecoverable ? L"Yes" : L"No") << L","
             << (file.hasDeletedTime ? L"Yes" : L"No") << L",";
         
-        if (file.hasDeletedTime) {
-            auto time_t_val = std::chrono::system_clock::to_time_t(file.deletedTime);
+		if (file.hasDeletedTime && file.deletedTime.has_value()) {
+            auto time_t_val = std::chrono::system_clock::to_time_t(file.deletedTime.value());
             std::tm tm_val;
             localtime_s(&tm_val, &time_t_val);
             wchar_t timeStr[64];
@@ -232,7 +237,7 @@ bool ExportToCSV(const std::wstring& csvPath, const std::vector<DeletedFileEntry
 }
 
 // Print fragmentation diagnostics
-void PrintDiagnostics(const FileCarver::CarvingDiagnostics& stats) {
+void PrintDiagnostics(const CarvingStatistics& stats) {
     wprintf(L"\n");
     wprintf(L"=== FRAGMENTATION DIAGNOSTICS ===\n");
     wprintf(L"Total signatures found:     %llu\n", stats.totalSignaturesFound);
@@ -258,20 +263,20 @@ void PrintDiagnostics(const FileCarver::CarvingDiagnostics& stats) {
     wprintf(L"Severely fragmented:        %llu\n", stats.severelyFragmented);
     wprintf(L"Unknown size (no header):   %llu\n", stats.unknownSize);
     
-    if (!stats.byFormat.empty()) {
-        wprintf(L"\nBy format:\n");
-        for (auto it = stats.byFormat.begin(); it != stats.byFormat.end(); ++it) {
-            std::wstring extWide(it->first.begin(), it->first.end());
-            wprintf(L"  %-8s: %llu files", extWide.c_str(), it->second);
-            
-            auto fragIt = stats.fragmentedByFormat.find(it->first);
-            if (fragIt != stats.fragmentedByFormat.end() && fragIt->second > 0) {
-                float pct = (100.0f * fragIt->second) / it->second;
-                wprintf(L" (%llu fragmented, %.1f%%)", fragIt->second, pct);
-            }
-            wprintf(L"\n");
-        }
-    }
+	if (!stats.byFormat.empty()) {
+		wprintf(L"\nBy format:\n");
+		for (const auto& [ext, count] : stats.byFormat) {
+			std::wstring extWide(ext.begin(), ext.end());
+			wprintf(L"  %-8s: %llu files", extWide.c_str(), count);
+			
+			auto fragIt = stats.fragmentedByFormat.find(ext);
+			if (fragIt != stats.fragmentedByFormat.end() && fragIt->second > 0) {
+				float pct = (100.0f * fragIt->second) / count;
+				wprintf(L" (%llu fragmented, %.1f%%)", fragIt->second, pct);
+			}
+			wprintf(L"\n");
+		}
+	}
     
     wprintf(L"\n");
     
@@ -415,7 +420,7 @@ int RunCLI(int argc, LPWSTR* argv) {
     
     // Clear global state
     g_foundFiles.clear();
-    g_carvingStats = FileCarver::CarvingDiagnostics();
+    g_carvingStats = CreateCarvingDiagnostics();
     
     // Start scan
     auto startTime = std::chrono::steady_clock::now();
