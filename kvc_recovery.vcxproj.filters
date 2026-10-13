@@ -1,149 +1,94 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Source Files">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
-    </Filter>
-    <Filter Include="Header Files">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
-    </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
-    <Filter Include="Core">
-      <UniqueIdentifier>{8f7d8f7d-8f7d-8f7d-8f7d-8f7d8f7d8f7d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application">
-      <UniqueIdentifier>{9e8e9e8e-9e8e-9e8e-9e8e-9e8e9e8e9e8e}</UniqueIdentifier>
-    </Filter>
-  </ItemGroup>
-<ItemGroup>
-  <ClCompile Include="src\main.cpp">
-    <Filter>Application</Filter>
-  </ClCompile>
-  <ClCompile Include="src\main_cli.cpp">
-    <Filter>Application</Filter>
-  </ClCompile>
-  <ClCompile Include="src\RecoveryApplication.cpp">
-    <Filter>Application</Filter>
-  </ClCompile>
-  <ClCompile Include="src\DiskForensicsCore.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\ExFATScanner.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\FAT32Scanner.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\FileCarver.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\FileSignatures.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\FragmentedFile.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\FragmentedRecoveryEngine.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\NTFSScanner.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\RecoveryEngine.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\UsnJournalScanner.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-  <ClCompile Include="src\VolumeReader.cpp">
-    <Filter>Core</Filter>
-  </ClCompile>
-</ItemGroup>
-
-<ItemGroup>
-  <ClInclude Include="src\main_cli.h">
-    <Filter>Application</Filter>
-  </ClInclude>
-  <ClInclude Include="src\RecoveryApplication.h">
-    <Filter>Application</Filter>
-  </ClInclude>
-  <ClInclude Include="src\StringUtils.h">
-    <Filter>Application</Filter>
-  </ClInclude>
-  <ClInclude Include="src\DiskForensicsCore.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\DiskHandle.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\ExFATScanner.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\FAT32Scanner.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\FileCarver.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\FileSignatures.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\ForensicsExceptions.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\FragmentedFile.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\FragmentedRecoveryEngine.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\SafetyLimits.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\Constants.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\NTFSScanner.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\RecoveryEngine.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\RecoveryResult.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\ScanConfiguration.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\UsnJournalScanner.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\VolumeGeometry.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\VolumeReader.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\RecoveryCandidate.h">
-    <Filter>Core</Filter>
-  </ClInclude>
-  <ClInclude Include="src\resource.h">
-    <Filter>Header Files</Filter>
-  </ClInclude>
-</ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="src\kvc_recovery.rc">
-      <Filter>Resource Files</Filter>
-    </ResourceCompile>
+    <Filter Include="Application"><UniqueIdentifier>{f6815059-898c-58b8-96f9-04b6bf357824}</UniqueIdentifier></Filter>
+    <Filter Include="GUI"><UniqueIdentifier>{e1721d02-29ef-5d94-b6d0-65d462b2ebe8}</UniqueIdentifier></Filter>
+    <Filter Include="Core"><UniqueIdentifier>{d560b5a2-8a4e-5fe2-bf26-f53d6fa6c081}</UniqueIdentifier></Filter>
+    <Filter Include="IO"><UniqueIdentifier>{07b31a95-a456-5fcc-a9b2-1eb4f7d0f645}</UniqueIdentifier></Filter>
+    <Filter Include="Filesystems"><UniqueIdentifier>{de4a68c8-6620-5b97-8b7c-fa34ff526775}</UniqueIdentifier></Filter>
+    <Filter Include="Carving"><UniqueIdentifier>{c13ca231-88c5-5b8e-9e46-e8648e0ab612}</UniqueIdentifier></Filter>
+    <Filter Include="Recovery"><UniqueIdentifier>{b5607480-ef92-5901-8555-c1354ddbe444}</UniqueIdentifier></Filter>
+    <Filter Include="Support"><UniqueIdentifier>{045fadc2-fbf5-56c7-955a-388718fd7cac}</UniqueIdentifier></Filter>
+    <Filter Include="Resources"><UniqueIdentifier>{8144849b-f312-5958-a0c0-c95bf98f2922}</UniqueIdentifier></Filter>
+    <Filter Include="Tests"><UniqueIdentifier>{90ccf3e0-2dee-52bc-982f-7d24050cc6bf}</UniqueIdentifier></Filter>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="src\icon.ico">
-      <Filter>Resource Files</Filter>
-    </Image>
+    <ClCompile Include="src\core\DiskForensicsCore.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="src\io\VolumeReader.cpp"><Filter>IO</Filter></ClCompile>
+    <ClCompile Include="src\carving\FileCarver.cpp"><Filter>Carving</Filter></ClCompile>
+    <ClCompile Include="src\carving\PdfParser.cpp"><Filter>Carving</Filter></ClCompile>
+    <ClCompile Include="src\carving\ArchiveParsers.cpp"><Filter>Carving</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\ExFATScanner.cpp"><Filter>Filesystems</Filter></ClCompile>
+    <ClCompile Include="src\carving\FileSignatures.cpp"><Filter>Carving</Filter></ClCompile>
+    <ClCompile Include="src\core\FragmentedFile.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\NTFSScanner.cpp"><Filter>Filesystems</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\FatScanner.cpp"><Filter>Filesystems</Filter></ClCompile>
+    <ClCompile Include="src\gui\RecoveryApplication.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\gui\Window.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\gui\Controls.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\gui\Commands.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\gui\Scan.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\gui\Results.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\gui\Recovery.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\gui\Dialogs.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\gui\WindowAppearance.cpp"><Filter>GUI</Filter></ClCompile>
+    <ClCompile Include="src\recovery\RecoveryEngine.cpp"><Filter>Recovery</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\UsnJournalScanner.cpp"><Filter>Filesystems</Filter></ClCompile>
+    <ClCompile Include="src\app\main.cpp"><Filter>Application</Filter></ClCompile>
+    <ClCompile Include="tests\gui-smoke.cpp"><Filter>Tests</Filter></ClCompile>
+    <ClCompile Include="src\app\main_cli.cpp"><Filter>Application</Filter></ClCompile>
+    <ClCompile Include="src\io\DiskHandle.cpp"><Filter>IO</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\FilesystemDetector.cpp"><Filter>Filesystems</Filter></ClCompile>
+    <ClCompile Include="src\io\VolumeLocator.cpp"><Filter>IO</Filter></ClCompile>
+    <ClCompile Include="src\io\StorageTopology.cpp"><Filter>IO</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\Lznt1.cpp"><Filter>Filesystems</Filter></ClCompile>
+    <ClCompile Include="src\recovery\CsvExport.cpp"><Filter>Recovery</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\ExtFilesystem.cpp"><Filter>Filesystems</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\ExtJournal.cpp"><Filter>Filesystems</Filter></ClCompile>
+    <ClCompile Include="src\core\OverlapResolver.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="src\filesystems\ExtScanner.cpp"><Filter>Filesystems</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\app\main_cli.h"><Filter>Application</Filter></ClInclude>
+    <ClInclude Include="src\support\StringUtils.h"><Filter>Support</Filter></ClInclude>
+    <ClInclude Include="src\support\Constants.h"><Filter>Support</Filter></ClInclude>
+    <ClInclude Include="src\core\DiskForensicsCore.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="src\io\DiskHandle.h"><Filter>IO</Filter></ClInclude>
+    <ClInclude Include="src\io\VolumeReader.h"><Filter>IO</Filter></ClInclude>
+    <ClInclude Include="src\core\VolumeGeometry.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="src\carving\FileCarver.h"><Filter>Carving</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\ExFATScanner.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\carving\FileSignatures.h"><Filter>Carving</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\NTFSScanner.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\FatScanner.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\gui\RecoveryApplication.h"><Filter>GUI</Filter></ClInclude>
+    <ClInclude Include="src\gui\WindowAppearance.h"><Filter>GUI</Filter></ClInclude>
+    <ClInclude Include="src\recovery\RecoveryEngine.h"><Filter>Recovery</Filter></ClInclude>
+    <ClInclude Include="src\support\ForensicsExceptions.h"><Filter>Support</Filter></ClInclude>
+    <ClInclude Include="src\core\FragmentedFile.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="src\support\SafetyLimits.h"><Filter>Support</Filter></ClInclude>
+    <ClInclude Include="src\core\ScanConfiguration.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\UsnJournalScanner.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\resources\resource.h"><Filter>Resources</Filter></ClInclude>
+    <ClInclude Include="src\core\RecoveryCandidate.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\FilesystemDetector.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\io\VolumeLocator.h"><Filter>IO</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\Lznt1.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\recovery\CsvExport.h"><Filter>Recovery</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\ExtFilesystem.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\ExtJournal.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\core\OverlapResolver.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="src\support\BitRange.h"><Filter>Support</Filter></ClInclude>
+    <ClInclude Include="src\filesystems\ExtScanner.h"><Filter>Filesystems</Filter></ClInclude>
+    <ClInclude Include="src\support\NameFilter.h"><Filter>Support</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="src\resources\kvc_recovery.rc"><Filter>Resources</Filter></ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="src\resources\icon.ico"><Filter>Resources</Filter></Image>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\resources\kvc_recovery.manifest"><Filter>Resources</Filter></None>
   </ItemGroup>
 </Project>

@@ -36,12 +36,14 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"><TargetName>FRT_x86</TargetName></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release_MinSize|x64'"><TargetName>FRT_x64_minSize</TargetName></PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release_MinSize|Win32'"><TargetName>FRT_x86_minSize</TargetName></PropertyGroup>
+  <PropertyGroup Condition="'$(GuiSmokeTest)'=='true'"><TargetName>gui-smoke</TargetName><IntDir>$(SolutionDir)obj\gui-smoke\</IntDir></PropertyGroup>
   <ItemDefinitionGroup>
+    <Manifest><AdditionalManifestFiles>$(ProjectDir)src\resources\kvc_recovery.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles></Manifest>
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -57,55 +59,89 @@
       <AdditionalDependencies>comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
     </Link>
-    <PostBuildEvent>
+    <PostBuildEvent Condition="'$(GuiSmokeTest)'!='true'">
       <Command>powershell -Command "&amp; {$f='$(OutDir)$(TargetName)$(TargetExt)'; (Get-Item $f).CreationTime='2026-01-01 00:00:00'; (Get-Item $f).LastWriteTime='2026-01-01 00:00:00'}"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><RuntimeLibrary>MultiThreaded</RuntimeLibrary></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release_MinSize'"><ClCompile><RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary></ClCompile></ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(GuiSmokeTest)'=='true'">
+    <ClCompile><PreprocessorDefinitions>FRT_GUI_SMOKE;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
+    <Link><SubSystem>Console</SubSystem></Link>
+  </ItemDefinitionGroup>
 <ItemGroup>
-  <ClCompile Include="src\DiskForensicsCore.cpp" />
-  <ClCompile Include="src\VolumeReader.cpp" />
-  <ClCompile Include="src\FileCarver.cpp" />
-  <ClCompile Include="src\ExFATScanner.cpp" />
-  <ClCompile Include="src\FileSignatures.cpp" />
-  <ClCompile Include="src\FragmentedFile.cpp" />
-  <ClCompile Include="src\NTFSScanner.cpp" />
-  <ClCompile Include="src\FAT32Scanner.cpp" />
-  <ClCompile Include="src\RecoveryApplication.cpp" />
-  <ClCompile Include="src\RecoveryEngine.cpp" />
-  <ClCompile Include="src\UsnJournalScanner.cpp" />
-  <ClCompile Include="src\FragmentedRecoveryEngine.cpp" />
-  <ClCompile Include="src\main.cpp" />
-  <ClCompile Include="src\main_cli.cpp" />
+  <ClCompile Include="src\core\DiskForensicsCore.cpp" />
+  <ClCompile Include="src\io\VolumeReader.cpp" />
+  <ClCompile Include="src\carving\FileCarver.cpp" />
+  <ClCompile Include="src\carving\PdfParser.cpp" />
+  <ClCompile Include="src\carving\ArchiveParsers.cpp" />
+  <ClCompile Include="src\filesystems\ExFATScanner.cpp" />
+  <ClCompile Include="src\carving\FileSignatures.cpp" />
+  <ClCompile Include="src\core\FragmentedFile.cpp" />
+  <ClCompile Include="src\filesystems\NTFSScanner.cpp" />
+  <ClCompile Include="src\filesystems\FatScanner.cpp" />
+  <ClCompile Include="src\gui\RecoveryApplication.cpp" />
+  <ClCompile Include="src\gui\Window.cpp" />
+  <ClCompile Include="src\gui\Controls.cpp" />
+  <ClCompile Include="src\gui\Commands.cpp" />
+  <ClCompile Include="src\gui\Scan.cpp" />
+  <ClCompile Include="src\gui\Results.cpp" />
+  <ClCompile Include="src\gui\Recovery.cpp" />
+  <ClCompile Include="src\gui\Dialogs.cpp" />
+  <ClCompile Include="src\gui\WindowAppearance.cpp" />
+  <ClCompile Include="src\recovery\RecoveryEngine.cpp" />
+  <ClCompile Include="src\filesystems\UsnJournalScanner.cpp" />
+  <ClCompile Include="src\app\main.cpp" Condition="'$(GuiSmokeTest)'!='true'" />
+  <ClCompile Include="tests\gui-smoke.cpp" Condition="'$(GuiSmokeTest)'=='true'" />
+  <ClCompile Include="src\app\main_cli.cpp" />
+  <ClCompile Include="src\io\DiskHandle.cpp" />
+  <ClCompile Include="src\filesystems\FilesystemDetector.cpp" />
+  <ClCompile Include="src\io\VolumeLocator.cpp" />
+  <ClCompile Include="src\io\StorageTopology.cpp" />
+  <ClCompile Include="src\filesystems\Lznt1.cpp" />
+  <ClCompile Include="src\recovery\CsvExport.cpp" />
+  <ClCompile Include="src\filesystems\ExtFilesystem.cpp" />
+  <ClCompile Include="src\filesystems\ExtJournal.cpp" />
+  <ClCompile Include="src\core\OverlapResolver.cpp" />
+  <ClCompile Include="src\filesystems\ExtScanner.cpp" />
 </ItemGroup>
 
 <ItemGroup>
-  <ClInclude Include="src\main_cli.h" />
-  <ClInclude Include="src\StringUtils.h" />
-  <ClInclude Include="src\Constants.h" />
-  <ClInclude Include="src\DiskForensicsCore.h" />
-  <ClInclude Include="src\DiskHandle.h" />
-  <ClInclude Include="src\VolumeReader.h" />
-  <ClInclude Include="src\VolumeGeometry.h" />
-  <ClInclude Include="src\FileCarver.h" />
-  <ClInclude Include="src\ExFATScanner.h" />
-  <ClInclude Include="src\FileSignatures.h" />
-  <ClInclude Include="src\NTFSScanner.h" />
-  <ClInclude Include="src\FAT32Scanner.h" />
-  <ClInclude Include="src\RecoveryApplication.h" />
-  <ClInclude Include="src\RecoveryEngine.h" />
-  <ClInclude Include="src\FragmentedRecoveryEngine.h" />
-  <ClInclude Include="src\ForensicsExceptions.h" />
-  <ClInclude Include="src\FragmentedFile.h" />
-  <ClInclude Include="src\SafetyLimits.h" />
-  <ClInclude Include="src\RecoveryResult.h" />
-  <ClInclude Include="src\ScanConfiguration.h" />
-  <ClInclude Include="src\UsnJournalScanner.h" />
-  <ClInclude Include="src\resource.h" />
-  <ClInclude Include="src\RecoveryCandidate.h" />
+  <ClInclude Include="src\app\main_cli.h" />
+  <ClInclude Include="src\support\StringUtils.h" />
+  <ClInclude Include="src\support\Constants.h" />
+  <ClInclude Include="src\core\DiskForensicsCore.h" />
+  <ClInclude Include="src\io\DiskHandle.h" />
+  <ClInclude Include="src\io\VolumeReader.h" />
+  <ClInclude Include="src\core\VolumeGeometry.h" />
+  <ClInclude Include="src\carving\FileCarver.h" />
+  <ClInclude Include="src\filesystems\ExFATScanner.h" />
+  <ClInclude Include="src\carving\FileSignatures.h" />
+  <ClInclude Include="src\filesystems\NTFSScanner.h" />
+  <ClInclude Include="src\filesystems\FatScanner.h" />
+  <ClInclude Include="src\gui\RecoveryApplication.h" />
+  <ClInclude Include="src\gui\WindowAppearance.h" />
+  <ClInclude Include="src\recovery\RecoveryEngine.h" />
+  <ClInclude Include="src\support\ForensicsExceptions.h" />
+  <ClInclude Include="src\core\FragmentedFile.h" />
+  <ClInclude Include="src\support\SafetyLimits.h" />
+  <ClInclude Include="src\core\ScanConfiguration.h" />
+  <ClInclude Include="src\filesystems\UsnJournalScanner.h" />
+  <ClInclude Include="src\resources\resource.h" />
+  <ClInclude Include="src\core\RecoveryCandidate.h" />
+  <ClInclude Include="src\filesystems\FilesystemDetector.h" />
+  <ClInclude Include="src\io\VolumeLocator.h" />
+  <ClInclude Include="src\filesystems\Lznt1.h" />
+  <ClInclude Include="src\recovery\CsvExport.h" />
+  <ClInclude Include="src\filesystems\ExtFilesystem.h" />
+  <ClInclude Include="src\filesystems\ExtJournal.h" />
+  <ClInclude Include="src\core\OverlapResolver.h" />
+  <ClInclude Include="src\support\BitRange.h" />
+  <ClInclude Include="src\filesystems\ExtScanner.h" />
+  <ClInclude Include="src\support\NameFilter.h" />
 </ItemGroup>
-  <ItemGroup><ResourceCompile Include="src\kvc_recovery.rc" /></ItemGroup>
-  <ItemGroup><Image Include="src\icon.ico" /></ItemGroup>
+  <ItemGroup><ResourceCompile Include="src\resources\kvc_recovery.rc" /></ItemGroup>
+  <ItemGroup><None Include="src\resources\kvc_recovery.manifest" /></ItemGroup>
+  <ItemGroup><Image Include="src\resources\icon.ico" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

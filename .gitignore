@@ -1,10 +1,14 @@
-# Skrypty lokalne
+# Local scripts
+github.sh
+release-now.md
+release/
+narzedzia/
 git-push.sh
 pack-release.sh
 pack-data.sh
 release-update.sh
 
-# Pliki środowiskowe
+# Environment files
 .env
 .env.*
 
@@ -15,13 +19,26 @@ releases/
 *.dat
 *.tar.gz
 
-# Binarki i build
+# Binaries and build output
 bin/
 obj/
 build/
 dist/
 *.exe
 *.dll
+*.pdb
+*.ilk
+*.vcxproj.user
 
-# Katalogi z danymi
+# Data folders
 data/
+
+# local test environment
+tests/testenv.local.psd1
+tests/ext-manifest.txt
+tests/fixtures/
+tests/fragmentation-results/
+tests/raw-results/
+tests/document-results/
+*.vhd
+*.vhdx
