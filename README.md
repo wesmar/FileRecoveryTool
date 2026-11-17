@@ -76,6 +76,21 @@ Download the [password-protected archive](https://github.com/wesmar/FileRecovery
 | `FRT_x64_minSize.exe` | x64 | Dynamic runtime; matching Visual C++ Redistributable required |
 | `FRT_x86_minSize.exe` | x86 | Dynamic runtime; matching Visual C++ Redistributable required |
 
+<details>
+<summary>Digital signature (Authenticode — Certum Open Source Code Signing)</summary>
+
+All four release binaries (`FRT_x64.exe`, `FRT_x86.exe`, `FRT_x64_minSize.exe`, `FRT_x86_minSize.exe`) are digitally signed and timestamped:
+
+- **Signer:** `CN=Open Source Developer Marek Wesołowski, O=Open Source Developer, L=Warszawa, S=mazowieckie, C=PL`
+- **Issuer:** `Certum Code Signing 2021 CA` (`Asseco Data Systems S.A.`)
+- **Timestamp:** `Certum Timestamp` (RFC 3161)
+
+Verify locally in PowerShell:
+```powershell
+Get-AuthenticodeSignature .\FRT_x64.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
+```
+</details>
+
 Administrator rights are required for direct disk and volume access. Development validation is performed on **Windows 11 x64**. The application uses native Windows APIs; Mica depends on OS support and falls back to an opaque surface.
 
 > **Preserve the source.** Stop writing to it after deletion, and save recovered files and reports to another physical disk. On SSD/NVMe, data already discarded through TRIM may no longer be readable.
