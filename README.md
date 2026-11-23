@@ -178,6 +178,22 @@ This builds all four release variants into `bin/`. `build_all.bat` calls the sam
 
 `src/` separates entry points, GUI, scan orchestration, disk I/O, file-system parsers, carving, recovery and support code. Visual Studio filters mirror the directory structure. Both interfaces call `DiskForensicsCore` and `RecoveryEngine`; the CLI is also the route used by the recovery test harness.
 
+## Support
+
+FileRecoveryTool is free. If it got your files back and you want to help:
+
+| Method | Details |
+|---|---|
+| PayPal | [paypal.me/ext1](https://paypal.me/ext1) |
+| Revolut | [revolut.me/marekb92](https://revolut.me/marekb92) |
+| BLIK (Poland) | to phone number `607 440 283` |
+| Bank transfer, PLN (mBank) | `PL56 1140 2004 0000 3102 2774 6285`, BIC `BREXPLPWMBK` |
+| Bank transfer, PLN (Revolut) | `PL14 2910 0006 0000 0000 0283 2042`, BIC `REVOPL22` |
+| Bank transfer, EUR or USD (Revolut) | `LT39 3250 0407 9321 0075`, BIC `REVOLT21` |
+| Bitcoin | `bc1qgl598mngyvjpy7wzl0umvnkknnfqdwfuz0k5ds` |
+
+The recipient is Marek Wesołowski. The Bitcoin QR code is at <https://kvc.pl/wsa-next#support>.
+
 ## License and author
 
 [MIT License](LICENSE.md).
